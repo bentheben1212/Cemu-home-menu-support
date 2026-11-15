@@ -9,6 +9,8 @@ namespace coreinit
 	uint32 OSLaunchTitleByPathl(const char* path, uint32 pathLength, uint32 argc);
 	uint32 OSRestartGame(uint32 argc, MEMPTR<char>* argv);
 	uint32 __LaunchByTitleId(uint64 titleId, uint32 argc, MEMPTR<char>* argv);
+	uint64 __OSGetMainAppTitleId(); // title that launched the current applet (0 if unknown)
+	void __OSQueueTitleSwitch(uint64 titleId); // switch to this title when the process exits
 
 	void OSReleaseForeground();
 

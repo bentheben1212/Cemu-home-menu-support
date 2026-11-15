@@ -667,6 +667,28 @@ namespace sysapp
 		coreinit::__LaunchByTitleId(menuTitleId, 0, nullptr);
 	}
 
+	// called by applets when closing. The applet then finalizes its libraries and calls _Exit(),
+	// at which point the queued switch back to the caller happens (see coreinit::__ExitProcessOrSwitch)
+	uint32 _SYSSwitchToMainApp()
+	{
+		uint64 mainAppTitleId = coreinit::__OSGetMainAppTitleId();
+		if (mainAppTitleId == 0)
+		{
+			mainAppTitleId = _SYSFindWiiUMenuTitleId();
+			cemuLog_log(LogType::Force, "_SYSSwitchToMainApp: Caller unknown, falling back to Wii U Menu {:016x}", mainAppTitleId);
+		}
+		if (mainAppTitleId == 0)
+		{
+			cemuLog_log(LogType::Force, "_SYSSwitchToMainApp: No main app or Wii U Menu found. Process exit will end emulation");
+			return 0;
+		}
+		cemuLog_log(LogType::Force, "_SYSSwitchToMainApp: Queued switch from {:016x} back to {:016x}", CafeSystem::GetForegroundTitleId(), mainAppTitleId);
+		coreinit::__OSClearCopyData();
+		_SYSAppendCallerInfo();
+		coreinit::__OSQueueTitleSwitch(mainAppTitleId);
+		return 0;
+	}
+
 	uint32 SYSRelaunchTitle(uint32 argc, MEMPTR<char>* argv)
 	{
 		// calls ACPCheckSelfTitleNotReferAccountLaunch?
@@ -702,6 +724,7 @@ namespace sysapp
 		cafeExportRegisterFunc(_SYSLaunchTitleByPathFromLauncher, "sysapp", "_SYSLaunchTitleByPathFromLauncher", LogType::Placeholder);
 		cafeExportRegisterFunc(SYSRelaunchTitle, "sysapp", "SYSRelaunchTitle", LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSLaunchMenu, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchToMainApp, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
 	}

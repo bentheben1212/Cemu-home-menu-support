@@ -3,6 +3,7 @@
 #include "Cafe/OS/libs/coreinit/coreinit_MessageQueue.h"
 #include "Cafe/OS/libs/coreinit/coreinit_OSScreen.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/TitleList/TitleId.h"
 #include "Cafe/Filesystem/fsc.h"
 #include "config/LaunchSettings.h"
 #include <pugixml.hpp>
@@ -708,8 +709,36 @@ namespace coreinit
 		CafeSystem::NotifyPPCProcessExit(status);
 	}
 
+	// Applets (00050030-xxxxxxxx) are launched on top of a "main app" (the Wii U Menu or a game) and return to it via
+	// _SYSSwitchToMainApp. Cemu runs only one process, so the applet replaces the main app and we remember the
+	// caller here (host memory, survives title switches) to switch back to it later
+	static uint64 s_mainAppTitleId = 0;
+	static bool s_startedViaTitleSwitch = false;
+	static std::atomic<uint64> s_queuedTitleSwitch = 0;
+
+	static bool _IsAppletTitle(uint64 titleId)
+	{
+		return TitleIdParser(titleId).GetType() == TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE;
+	}
+
+	uint64 __OSGetMainAppTitleId()
+	{
+		return s_mainAppTitleId;
+	}
+
+	void __OSQueueTitleSwitch(uint64 titleId)
+	{
+		s_queuedTitleSwitch.store(titleId);
+	}
+
 	uint32 __LaunchByTitleId(uint64 titleId, uint32 argc, MEMPTR<char>* argv)
 	{
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		if (!_IsAppletTitle(currentTitleId))
+			s_mainAppTitleId = currentTitleId; // leaving a main app: it becomes the caller of whatever we launch
+		s_startedViaTitleSwitch = true;
+		s_queuedTitleSwitch.store(0);
+		cemuLog_log(LogType::Force, "Title switch: {:016x} -> {:016x} (main app {:016x})", currentTitleId, titleId, s_mainAppTitleId);
 		// prepare argument buffer
 		#if 0
 		char argumentBuffer[4096];
@@ -895,6 +924,19 @@ namespace coreinit
 		coreinit::OSSuspendThread(coreinit::OSGetCurrentThread());
 	}
 
+	// ends the process. If a title switch was queued (e.g. by _SYSSwitchToMainApp) the queued title is launched instead
+	static void __ExitProcessOrSwitch(sint32 status)
+	{
+		uint64 queuedTitleId = s_queuedTitleSwitch.exchange(0);
+		if (queuedTitleId != 0)
+		{
+			cemuLog_log(LogType::Force, "Process exit with status {}: performing queued switch to {:016x}", status, queuedTitleId);
+			__LaunchByTitleId(queuedTitleId, 0, nullptr);
+			return;
+		}
+		__PPCExit(status);
+	}
+
 	void coreinit_exit(sint32 status)
 	{
 		cemuLog_log(LogType::Force, "The title terminated the process by calling coreinit.exit({})", (sint32)status);
@@ -903,12 +945,24 @@ namespace coreinit
 			PPCCoreCallback(gCoreinitData->__atexit_cleanup, status);
 		if (gCoreinitData->__stdio_cleanup)
 			PPCCoreCallback(gCoreinitData->__stdio_cleanup);
-		__PPCExit(status);
+		__ExitProcessOrSwitch(status);
+	}
+
+	// like exit() but without running atexit/stdio cleanup. Used by applets after _SYSSwitchToMainApp
+	void coreinit__Exit(sint32 status)
+	{
+		cemuLog_log(LogType::Force, "The title terminated the process by calling coreinit._Exit({})", (sint32)status);
+		__ExitProcessOrSwitch(status);
 	}
 
 	void miscInit()
 	{
 		s_currentTitleId = CafeSystem::GetForegroundTitleId();
+		// title started directly (game list, command line) rather than by a guest title switch: reset caller tracking
+		if (!s_startedViaTitleSwitch)
+			s_mainAppTitleId = _IsAppletTitle(s_currentTitleId) ? 0 : s_currentTitleId;
+		s_startedViaTitleSwitch = false;
+		s_queuedTitleSwitch.store(0);
 		s_sdkVersion = CafeSystem::GetForegroundTitleSDKVersion();
 		s_forwardConsoleLogs = LaunchSettings::ForwardConsoleLogging();
 		s_transitionToBackground = false;
@@ -945,6 +999,7 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSDriver_Deregister, LogType::Placeholder);
 
 		cafeExportRegisterFunc(coreinit_exit, "coreinit", "exit", LogType::CoreinitThread);
+		cafeExportRegisterFunc(coreinit__Exit, "coreinit", "_Exit", LogType::CoreinitThread);
 		cafeExportRegister("coreinit", __PPCExit, LogType::CoreinitThread);
 	}
 

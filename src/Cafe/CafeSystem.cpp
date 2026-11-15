@@ -1062,8 +1062,12 @@ namespace CafeSystem
         fsc_unmount("/internal/code/", FSC_PRIORITY_BASE);
 	}
 
+	std::mutex sShutdownTitleMtx;
+
 	void ShutdownTitle()
 	{
+		// can race between the UI thread (closing Cemu / stopping emulation) and the host thread spawned by a guest exit or title switch
+		std::unique_lock _lock(sShutdownTitleMtx);
 		if(!sSystemRunning)
 			return;
 		coreinit::OSSchedulerEnd();

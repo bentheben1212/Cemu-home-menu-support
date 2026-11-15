@@ -1231,6 +1231,10 @@ namespace coreinit
 			}
 			if (isMainCore)
 			{
+				// the other cores check this after waking up. The main core never blocks, so check here or
+				// OSSchedulerEnd() would wait forever when no guest thread is runnable (e.g. all suspended after exit)
+				if (!sSchedulerActive.load(std::memory_order::relaxed))
+					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 				__OSCheckSystemEvents();
 				if(g_isMulticoreMode == false)
 					coreIndex = (coreIndex + 1) % 3;
@@ -1423,7 +1427,18 @@ namespace coreinit
 			g_coreRunQueueThreadCount[i].increment(); // make sure to wake up cores if they are paused and waiting for runnable threads
 		// wait for threads to stop execution
 		for (auto& threadItr : sSchedulerThreads)
+		{
+			if (!threadItr.joinable())
+				continue;
+			if (threadItr.get_id() == std::this_thread::get_id())
+			{
+				// joining ourselves would throw (std::terminate -> SIGABRT)
+				cemuLog_log(LogType::Force, "OSSchedulerEnd() called from a scheduler thread, detaching it instead of joining");
+				threadItr.detach();
+				continue;
+			}
 			threadItr.join();
+		}
 		sSchedulerThreads.clear();
 		g_schedulerThreadHandles.clear();
 #if BOOST_OS_LINUX
