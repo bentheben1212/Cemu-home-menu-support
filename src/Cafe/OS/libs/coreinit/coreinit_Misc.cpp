@@ -791,6 +791,35 @@ namespace coreinit
 		return 0;
 	}
 
+	// No power-off/reboot is ever pending. Title switches (SYSLaunchMenu, OSLaunchTitleByPathl, ...)
+	// are handled by tearing down the process from a host thread, not via a shutdown request
+	enum class OSShutdownReason : uint32
+	{
+		NoShutdown = 0,
+	};
+
+	OSShutdownReason OSGetShutdownReason()
+	{
+		static bool s_logged = false;
+		if (!s_logged)
+		{
+			cemuLog_log(LogType::Force, "OSGetShutdownReason() -> NoShutdown (first call, LR 0x{:08x})", PPCInterpreter_getCurrentInstance()->spr.LR);
+			s_logged = true;
+		}
+		return OSShutdownReason::NoShutdown;
+	}
+
+	uint32 OSGetShutdownFlags()
+	{
+		static bool s_logged = false;
+		if (!s_logged)
+		{
+			cemuLog_log(LogType::Force, "OSGetShutdownFlags() -> 0 (first call, LR 0x{:08x})", PPCInterpreter_getCurrentInstance()->spr.LR);
+			s_logged = true;
+		}
+		return 0;
+	}
+
 	void OSReleaseForeground()
 	{
 		cemuLog_logDebug(LogType::Force, "OSReleaseForeground not implemented");
@@ -907,6 +936,8 @@ namespace coreinit
 
 		cafeExportRegister("coreinit", OSLaunchTitleByPathl, LogType::Placeholder);
 		cafeExportRegister("coreinit", OSRestartGame, LogType::Placeholder);
+		cafeExportRegister("coreinit", OSGetShutdownReason, LogType::Placeholder);
+		cafeExportRegister("coreinit", OSGetShutdownFlags, LogType::Placeholder);
 
 		cafeExportRegister("coreinit", OSReleaseForeground, LogType::Placeholder);
 

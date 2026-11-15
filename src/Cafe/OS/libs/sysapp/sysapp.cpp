@@ -3,6 +3,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_FG.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
+#include "Cafe/TitleList/TitleList.h"
 
 typedef struct  
 {
@@ -634,6 +635,38 @@ namespace sysapp
 		return coreinit::OSLaunchTitleByPathl(path, pathLength, 0);
 	}
 
+	// returns the Wii U Menu title for the platform region, or an installed menu of another region as fallback
+	static uint64 _SYSFindWiiUMenuTitleId()
+	{
+		uint64 preferredTitleId = _SYSGetSystemApplicationTitleId(0);
+		uint16 version;
+		if (CafeTitleList::HasTitle(preferredTitleId, version))
+			return preferredTitleId;
+		for (uint64 titleId : { systemApplicationTitleId[0].t1, systemApplicationTitleId[0].t2, systemApplicationTitleId[0].t0 })
+		{
+			if (CafeTitleList::HasTitle(titleId, version))
+			{
+				cemuLog_log(LogType::Force, "SYSLaunchMenu: Wii U Menu {:016x} for platform region is not installed, using {:016x}", preferredTitleId, titleId);
+				return titleId;
+			}
+		}
+		return 0;
+	}
+
+	void SYSLaunchMenu()
+	{
+		uint64 menuTitleId = _SYSFindWiiUMenuTitleId();
+		if (menuTitleId == 0)
+		{
+			cemuLog_log(LogType::Force, "SYSLaunchMenu: No Wii U Menu title found (expected {:016x}). Title switch aborted", _SYSGetSystemApplicationTitleId(0));
+			return;
+		}
+		cemuLog_log(LogType::Force, "SYSLaunchMenu: Switching from {:016x} to Wii U Menu {:016x}", CafeSystem::GetForegroundTitleId(), menuTitleId);
+		coreinit::__OSClearCopyData();
+		_SYSAppendCallerInfo();
+		coreinit::__LaunchByTitleId(menuTitleId, 0, nullptr);
+	}
+
 	uint32 SYSRelaunchTitle(uint32 argc, MEMPTR<char>* argv)
 	{
 		// calls ACPCheckSelfTitleNotReferAccountLaunch?
@@ -668,6 +701,7 @@ namespace sysapp
 		cafeExportRegisterFunc(SYSClearSysArgs, "sysapp", "SYSClearSysArgs", LogType::Placeholder);
 		cafeExportRegisterFunc(_SYSLaunchTitleByPathFromLauncher, "sysapp", "_SYSLaunchTitleByPathFromLauncher", LogType::Placeholder);
 		cafeExportRegisterFunc(SYSRelaunchTitle, "sysapp", "SYSRelaunchTitle", LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSLaunchMenu, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
 	}
