@@ -3,15 +3,30 @@
 #include "PPCInterpreterHelper.h"
 
 std::unordered_set<std::string> s_unsupportedHLECalls;
+std::unordered_map<uint32, uint64> s_unsupportedHLECallCount; // keyed by import stub address
+std::mutex s_hleLogMutex;
 
+// called from the interpreter and both recompiler backends; instructionPointer points to the import stub
 void PPCInterpreter_handleUnsupportedHLECall(PPCInterpreter_t* hCPU)
 {
-	const char* libFuncName = (char*)memory_getPointerFromVirtualOffset(hCPU->instructionPointer + 8);
-	std::string tempString = fmt::format("Unsupported lib call: {}", libFuncName);
-	if (s_unsupportedHLECalls.find(tempString) == s_unsupportedHLECalls.end())
 	{
-		cemuLog_log(LogType::UnsupportedAPI, "{}", tempString);
-		s_unsupportedHLECalls.emplace(tempString);
+		std::unique_lock _l(s_hleLogMutex);
+		const char* libFuncName = (char*)memory_getPointerFromVirtualOffset(hCPU->instructionPointer + 8);
+		uint64 count = ++s_unsupportedHLECallCount[hCPU->instructionPointer];
+		if (count == 1)
+		{
+			std::string tempString = fmt::format("Unsupported lib call: {}", libFuncName);
+			if (s_unsupportedHLECalls.find(tempString) == s_unsupportedHLECalls.end())
+			{
+				cemuLog_log(LogType::UnsupportedAPI, "{}", tempString);
+				s_unsupportedHLECalls.emplace(tempString);
+			}
+		}
+		else if (count >= 64 && (count & (count - 1)) == 0)
+		{
+			// log repeated calls at power-of-two intervals so that polling loops on unsupported functions are visible
+			cemuLog_log(LogType::UnsupportedAPI, "Unsupported lib call: {} (called {} times, LR 0x{:08x})", libFuncName, count, hCPU->spr.LR);
+		}
 	}
 	hCPU->gpr[3] = 0;
 	PPCInterpreter_nextInstruction(hCPU);
@@ -51,16 +66,12 @@ HLECALL PPCInterpreter_getHLECall(HLEIDX funcIndex)
 	return s_ppcHleTable[funcIndex];
 }
 
-std::mutex s_hleLogMutex;
-
 void PPCInterpreter_virtualHLE(PPCInterpreter_t* hCPU, unsigned int opcode)
 {
 	uint32 hleFuncId = opcode & 0xFFFF;
 	if (hleFuncId == 0xFFD0) [[unlikely]]
 	{
-		s_hleLogMutex.lock();
 		PPCInterpreter_handleUnsupportedHLECall(hCPU);
-		s_hleLogMutex.unlock();
 	}
 	else
 	{

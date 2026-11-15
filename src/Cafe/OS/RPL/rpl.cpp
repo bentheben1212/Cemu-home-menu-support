@@ -772,18 +772,6 @@ uint32 rpl_mapHLEImport(RPLModule* rplLoaderContext, const char* rplName, const 
 	}
 	// find import in list of known exports
 	sint32 functionIndex = osLib_getFunctionIndex(libName, funcName);
-	if (functionIndex < 0 && strcmp(libName, "drmapp") == 0)
-	{
-		// drmapp exports C++ functions (e.g. NupChkStart__3RplFv) whose exact mangled names
-		// are not all known. Fall back to the unmangled base name for this library only
-		if (const char* sep = strstr(funcName, "__"); sep && sep != funcName)
-		{
-			std::string baseName(funcName, sep - funcName);
-			functionIndex = osLib_getFunctionIndex(libName, baseName.c_str());
-			if (functionIndex >= 0)
-				cemuLog_log(LogType::Force, "RPLLoader: Mapped drmapp import {} to HLE {}", funcName, baseName);
-		}
-	}
 	if (functionIndex >= 0)
 	{
 		MPTR codeAddr = memory_getVirtualOffsetFromPointer(RPLLoader_AllocateTrampolineCodeSpace(4));

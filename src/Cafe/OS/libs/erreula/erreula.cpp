@@ -311,6 +311,9 @@ namespace erreula
 
 	void ErrEulaAppearError(AppearArg* arg)
 	{
+		uint32 errorCode = arg->errorCode;
+		cemuLog_log(LogType::Force, "ErrEulaAppearError: type {} code {:03}-{:04} ({}) (LR 0x{:08x})",
+					(uint32)arg->errorType.value(), errorCode / 10000, errorCode % 10000, errorCode, PPCInterpreter_getCurrentInstance()->spr.LR);
 		g_errEula.currentDialog = *arg;
 		if(g_errEula.errEulaInstance)
 			g_errEula.errEulaInstance->DoAppearError(arg);

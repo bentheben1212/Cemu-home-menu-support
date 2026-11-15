@@ -5,7 +5,12 @@ namespace drmapp
 {
 	uint32 NupChkIsFinished(uint32 ukn)
 	{
-		cemuLog_logDebug(LogType::Force, "drmapp.NupChkIsFinished() - placeholder");
+		static bool s_logged = false;
+		if (!s_logged)
+		{
+			cemuLog_log(LogType::Force, "drmapp.NupChkIsFinished() -> 1 (first call, LR 0x{:08x})", PPCInterpreter_getCurrentInstance()->spr.LR);
+			s_logged = true;
+		}
 		return 1;
 	}
 
@@ -28,68 +33,94 @@ namespace drmapp
 	}
 
 	// System update (NUP) check used by the Wii U Menu during boot.
-	// We have no network update service, so the check is reported as already
-	// finished with no update required. The exact signatures and state enum are
-	// not documented, so these are raw handlers that log their register args.
+	// There is no update server, so the check reports itself as finished with no update needed.
+	// The state enum is undocumented. Defaults can be overridden for testing:
+	//   CEMU_DRMAPP_NUP_STATE = value written to NupChkGetState's int* out parameter (default 0)
+	//   CEMU_DRMAPP_NUP_RET   = return value of NupChkGetState (default 1)
 
-	// Value returned by NupChkGetState. Not confirmed against real hardware;
-	// can be overridden at runtime with CEMU_DRMAPP_NUP_STATE=<int> for testing.
-	static uint32 GetNupFinishedState()
+	static uint32 GetEnvU32(const char* name, uint32 defaultValue)
 	{
-		static const uint32 s_state = []() -> uint32 {
-			uint32 state = 1;
-			if (const char* env = getenv("CEMU_DRMAPP_NUP_STATE"))
-				state = (uint32)strtoul(env, nullptr, 0);
-			cemuLog_log(LogType::Force, "drmapp: NupChkGetState will report state {}", state);
-			return state;
-		}();
-		return s_state;
+		const char* env = getenv(name);
+		if (!env || !*env)
+			return defaultValue;
+		return (uint32)strtoul(env, nullptr, 0);
 	}
 
-	static void LogNupCall(PPCInterpreter_t* hCPU, const char* name, uint32 ret)
+	static bool ShouldLogCall(uint64& counter)
 	{
-		cemuLog_log(LogType::Force, "drmapp.{}(r3=0x{:08x}, r4=0x{:08x}, r5=0x{:08x}) -> {} (LR 0x{:08x})",
-					name, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5], ret, hCPU->spr.LR);
+		counter++;
+		return counter == 1 || (counter >= 64 && (counter & (counter - 1)) == 0);
 	}
 
+	static void LogCall(PPCInterpreter_t* hCPU, const char* name, uint64 count)
+	{
+		cemuLog_log(LogType::Force, "drmapp.{}(r3=0x{:08x}, r4=0x{:08x}) call #{} (LR 0x{:08x})",
+					name, hCPU->gpr[3], hCPU->gpr[4], count, hCPU->spr.LR);
+	}
+
+	// Rpl::Initialize(const nn::drmapp::InitializeArg&)
+	void export_Initialize(PPCInterpreter_t* hCPU)
+	{
+		static uint64 s_count = 0;
+		if (ShouldLogCall(s_count))
+			LogCall(hCPU, "Initialize", s_count);
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
+	// Rpl::NupChkStart(const nn::drmapp::StartArg&)
 	void export_NupChkStart(PPCInterpreter_t* hCPU)
 	{
-		LogNupCall(hCPU, "NupChkStart", 0);
-		osLib_returnFromFunction(hCPU, 0); // success
+		static uint64 s_count = 0;
+		if (ShouldLogCall(s_count))
+			LogCall(hCPU, "NupChkStart", s_count);
+		osLib_returnFromFunction(hCPU, 0);
 	}
 
+	// Rpl::NupChkGetState(int* state)
 	void export_NupChkGetState(PPCInterpreter_t* hCPU)
 	{
-		uint32 state = GetNupFinishedState();
-		static bool s_loggedOnce = false;
-		if (!s_loggedOnce) // polled every frame, only log the first call
+		static const uint32 s_state = GetEnvU32("CEMU_DRMAPP_NUP_STATE", 0);
+		static const uint32 s_ret = GetEnvU32("CEMU_DRMAPP_NUP_RET", 1);
+		static uint64 s_count = 0;
+		ppcDefineParamMPTR(statePtr, 0);
+		uint32 prevState = 0;
+		if (statePtr != MPTR_NULL)
 		{
-			LogNupCall(hCPU, "NupChkGetState", state);
-			s_loggedOnce = true;
+			prevState = memory_readU32(statePtr);
+			memory_writeU32(statePtr, s_state);
 		}
-		osLib_returnFromFunction(hCPU, state);
+		if (ShouldLogCall(s_count))
+		{
+			cemuLog_log(LogType::Force, "drmapp.NupChkGetState(state*=0x{:08x}) call #{}: *state {} -> {}, return {} (LR 0x{:08x})",
+						statePtr, s_count, prevState, s_state, s_ret, hCPU->spr.LR);
+		}
+		osLib_returnFromFunction(hCPU, s_ret);
 	}
 
+	// Rpl::IsProgressBarVisible()
 	void export_IsProgressBarVisible(PPCInterpreter_t* hCPU)
 	{
-		static bool s_loggedOnce = false;
-		if (!s_loggedOnce)
-		{
-			LogNupCall(hCPU, "IsProgressBarVisible", 0);
-			s_loggedOnce = true;
-		}
-		osLib_returnFromFunction(hCPU, 0); // no progress bar
+		static uint64 s_count = 0;
+		if (ShouldLogCall(s_count))
+			LogCall(hCPU, "IsProgressBarVisible", s_count);
+		osLib_returnFromFunction(hCPU, 0);
 	}
 
+	// Rpl::Calculate(const nn::drmapp::ControllerInfo&) - per-frame update, nothing to do
 	void export_Calculate(PPCInterpreter_t* hCPU)
 	{
-		static bool s_loggedOnce = false;
-		if (!s_loggedOnce)
-		{
-			LogNupCall(hCPU, "Calculate", 0);
-			s_loggedOnce = true;
-		}
-		osLib_returnFromFunction(hCPU, 0); // nothing to update
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
+	// Rpl::DrawTV() / Rpl::DrawDRC() - progress bar is never visible, nothing to draw
+	void export_DrawTV(PPCInterpreter_t* hCPU)
+	{
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
+	void export_DrawDRC(PPCInterpreter_t* hCPU)
+	{
+		osLib_returnFromFunction(hCPU, 0);
 	}
 
 	class : public COSModule
@@ -107,12 +138,13 @@ namespace drmapp
 			cafeExportRegisterFunc(AocChkIsFinished, "drmapp", "AocChkIsFinished__3RplFv", LogType::Placeholder);
 			cafeExportRegisterFunc(TicketChkIsFinished, "drmapp", "TicketChkIsFinished__3RplFv", LogType::Placeholder);
 
-			// registered under their base names; mangled imports (e.g. NupChkStart__3RplFv)
-			// are resolved to these by the drmapp base-name fallback in the RPL import resolver (rpl.cpp)
-			osLib_addFunction("drmapp", "NupChkStart", export_NupChkStart);
-			osLib_addFunction("drmapp", "NupChkGetState", export_NupChkGetState);
-			osLib_addFunction("drmapp", "IsProgressBarVisible", export_IsProgressBarVisible);
-			osLib_addFunction("drmapp", "Calculate", export_Calculate);
+			osLib_addFunction("drmapp", "Initialize__3RplFRCQ3_2nn6drmapp13InitializeArg", export_Initialize);
+			osLib_addFunction("drmapp", "NupChkStart__3RplFRCQ3_2nn6drmapp8StartArg", export_NupChkStart);
+			osLib_addFunction("drmapp", "NupChkGetState__3RplFPi", export_NupChkGetState);
+			osLib_addFunction("drmapp", "IsProgressBarVisible__3RplFv", export_IsProgressBarVisible);
+			osLib_addFunction("drmapp", "Calculate__3RplFRCQ3_2nn6drmapp14ControllerInfo", export_Calculate);
+			osLib_addFunction("drmapp", "DrawTV__3RplFv", export_DrawTV);
+			osLib_addFunction("drmapp", "DrawDRC__3RplFv", export_DrawDRC);
 		}
 	}s_COSdrmappModule;
 
