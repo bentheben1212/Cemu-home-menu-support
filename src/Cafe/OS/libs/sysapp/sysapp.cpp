@@ -709,6 +709,13 @@ namespace sysapp
 	// eShop is the applet with PFID 10. The menu calls this instead of SYSSwitchTo(10). args (SysEShopArgs) may be null
 	static constexpr sint32 SYS_PFID_ESHOP = 10;
 
+	// used by other libraries that start an applet themselves (e.g. nn_olv StartPortalApp for Miiverse)
+	uint32 SwitchToPFID(sint32 pfid, const char* funcName)
+	{
+		coreinit::__OSClearCopyData();
+		return _SYSSwitchToTitle(funcName, _SYSResolvePFIDToTitleId(pfid));
+	}
+
 	uint32 SYSSwitchToEShop(void* args)
 	{
 		cemuLog_log(LogType::Force, "SYSSwitchToEShop(args 0x{:08x}) (LR 0x{:08x})", MEMPTR<void>(args).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR);

@@ -163,6 +163,9 @@ namespace nn
 		bool IsInitialized();
 		sint32 Initialize(nn::olv::InitializeParam* pParam);
 		sint32 InitializeSystem(nn::olv::InitializeParam* pParam);
+		void* StartSystemPortalAppParam_ctor(void* _this);
+		void* StartPortalAppParam_ctor(void* _this);
+		sint32 StartPortalApp(void* pParam);
 		sint32 InitializePortalApp(nn::olv::PortalAppParam* pPortalAppParam, nn::olv::InitializeParam* pInitializeParam);
 
 		static void loadOliveInitializeTypes()
@@ -170,6 +173,9 @@ namespace nn
 			cafeExportRegisterFunc(Initialize, "nn_olv", "Initialize__Q2_2nn3olvFPCQ3_2nn3olv15InitializeParam", LogType::NN_OLV);
 			cafeExportRegisterFunc(IsInitialized, "nn_olv", "IsInitialized__Q2_2nn3olvFv", LogType::NN_OLV);
 			cafeExportRegisterFunc(InitializeSystem, "nn_olv", "InitializeSystem__Q3_2nn3olv6hiddenFPCQ3_2nn3olv15InitializeParam", LogType::NN_OLV);
+			cafeExportRegisterFunc(StartSystemPortalAppParam_ctor, "nn_olv", "__ct__Q4_2nn3olv6hidden25StartSystemPortalAppParamFv", LogType::NN_OLV);
+			cafeExportRegisterFunc(StartPortalAppParam_ctor, "nn_olv", "__ct__Q3_2nn3olv19StartPortalAppParamFv", LogType::NN_OLV);
+			cafeExportRegisterFunc(StartPortalApp, "nn_olv", "StartPortalApp__Q2_2nn3olvFPCQ3_2nn3olv19StartPortalAppParam", LogType::NN_OLV);
 			cafeExportRegisterFunc(Report::GetReportTypes, "nn_olv", "GetReportTypes__Q3_2nn3olv6ReportFv", LogType::NN_OLV);
 			cafeExportRegisterFunc(Report::SetReportTypes, "nn_olv", "SetReportTypes__Q3_2nn3olv6ReportFUi", LogType::NN_OLV);
 

@@ -386,6 +386,11 @@ bool iosuCrypto_addClientCertificate(void* sslctx, sint32 certificateId)
 				cemuLog_log(LogType::Force, "Unable to setup certificate {}", certificateId);
 				return false;
 			}
+			if (iosuCryptoCertificates.certList[i].pkey == nullptr)
+			{
+				cemuLog_log(LogType::Force, "Certificate {} has no private key (requires otp.bin)", certificateId);
+				return false;
+			}
 			if (SSL_CTX_use_RSAPrivateKey(ctx, iosuCryptoCertificates.certList[i].pkey) != 1)
 			{
 				cemuLog_log(LogType::Force, "Unable to setup certificate {} RSA private key", certificateId);
@@ -526,10 +531,12 @@ void iosuCrypto_loadSSLCertificates()
 	if (iosuCryptoCertificates.hasCertificates)
 		return;
 
+	// Without OTP the private keys of the client certificates (ccerts) can't be decrypted. The certificates themselves
+	// and the server CA certificates (scerts) don't need it, so load those anyway. Titles like eShop export the CA
+	// certificates at startup and panic if they are missing
 	if (!hasOtpMem)
-		return; // cant load certificates without OTP keys
+		cemuLog_log(LogType::Force, "IOSU_CRYPTO: No otp.bin, loading SSL certificates without client private keys");
 
-	// load CA certificate
 	bool hasAllCertificates = true;
 	for( const auto& c : g_certificates )
 	{
@@ -537,7 +544,7 @@ void iosuCrypto_loadSSLCertificates()
 		std::wstring certFilePath = certDir + c.name;
 		std::wstring keyFilePath;		
 
-		if( *c.key )
+		if( *c.key && hasOtpMem )
 			keyFilePath = certDir + c.key;
 		else
 			keyFilePath.clear();
@@ -548,7 +555,7 @@ void iosuCrypto_loadSSLCertificates()
 			hasAllCertificates = false;
 		}
 	}
-	iosuCryptoCertificates.hasCertificates = hasAllCertificates; // true
+	iosuCryptoCertificates.hasCertificates = hasAllCertificates && hasOtpMem;
 }
 
 void iosuCrypto_init()

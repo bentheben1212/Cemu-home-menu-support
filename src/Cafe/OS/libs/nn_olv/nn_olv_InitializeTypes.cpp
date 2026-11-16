@@ -1,3 +1,4 @@
+#include "Cafe/OS/libs/sysapp/sysapp.h"
 #include "nn_olv_InitializeTypes.h"
 #include "CafeSystem.h"
 #include "Cafe/OS/libs/nn_act/nn_act.h"
@@ -305,6 +306,27 @@ namespace nn
 			g_IsInitialized = true;
 			g_IsOnlineMode = false;
 			cemuLog_log(LogType::Force, "nn_olv: InitializeSystem (flags 0x{:x}) -> success (offline)", (uint32)pParam->m_Flags);
+			return OLV_RESULT_SUCCESS;
+		}
+
+		// The Wii U Menu starts Miiverse with StartPortalApp(StartSystemPortalAppParam). The param holds launch options
+		// for the portal (e.g. a start page); they are not needed to start the Miiverse applet itself
+		void* StartSystemPortalAppParam_ctor(void* _this)
+		{
+			return _this;
+		}
+
+		void* StartPortalAppParam_ctor(void* _this)
+		{
+			return _this;
+		}
+
+		sint32 StartPortalApp(void* pParam)
+		{
+			static constexpr sint32 SYS_PFID_MIIVERSE = 9;
+			cemuLog_log(LogType::Force, "nn_olv: StartPortalApp(param 0x{:08x}) (LR 0x{:08x})", MEMPTR<void>(pParam).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR);
+			if (sysapp::SwitchToPFID(SYS_PFID_MIIVERSE, "StartPortalApp") != 0)
+				return OLV_RESULT_MISSING_DATA; // the switch failed (Miiverse not installed)
 			return OLV_RESULT_SUCCESS;
 		}
 

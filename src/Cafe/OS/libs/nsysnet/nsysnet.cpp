@@ -2226,10 +2226,12 @@ namespace nsysnet
 		uint8* pkeyData = iosuCrypto_getCertificatePrivateKeyById(serverCertId, &pkeySize);
 		if (pkeyData == nullptr || pkeySize == 0)
 		{
-			cemuLog_log(LogType::Force, "NSSLExportInternalClientCertificate: private key of client certificate {} is not available", serverCertId);
-			if (pkeyOutputSize)
-				*pkeyOutputSize = 0;
-			osLib_returnFromFunction(hCPU, NSSL_INVALID_CERT_ID);
+			// no otp.bin: export the certificate without its private key. Connections that need it fail later,
+			// which titles report as a network error
+			cemuLog_log(LogType::Force, "NSSLExportInternalClientCertificate: certificate {} exported without private key (requires otp.bin)", serverCertId);
+			*pkeyOutputSize = 0;
+			*pkeyCertType = 0;
+			osLib_returnFromFunction(hCPU, NSSL_OK);
 			return;
 		}
 		if (pkeyOutput)
