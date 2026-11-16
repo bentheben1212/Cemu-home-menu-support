@@ -16,6 +16,8 @@
 #include "Cafe/OS/libs/sysapp/sysapp.h"
 #include "Common/FileStream.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/TitleList/TitleList.h"
+#include "Cafe/IOSU/legacy/iosu_mcp.h"
 
 using ACPDeviceType = iosu::acp::ACPDeviceType;
 
@@ -32,6 +34,43 @@ namespace nn
 {
 namespace acp
 {
+	// ACP result returned when a title can't be launched. Value assumed (ACP "not found"), not verified against hardware
+	static constexpr sint32 ACP_RESULT_NOT_FOUND = -500;
+
+	static std::atomic<uint64> s_lastLaunchCheckedTitleId = 0;
+
+	bool ACPIsTitleLaunchable(uint64 titleId)
+	{
+		TitleInfo titleInfo;
+		if (!CafeTitleList::GetFirstByTitleId(titleId, titleInfo))
+			return false;
+		return titleInfo.IsValid();
+	}
+
+	uint64 ACPGetLastLaunchCheckedTitleId()
+	{
+		return s_lastLaunchCheckedTitleId.load();
+	}
+
+	// ACPCheckTitleLaunchByTitleListType(MCPTitleListType* title, ?)
+	// Called by the Wii U Menu before launching a title from its title list (e.g. an applet from the bottom row)
+	void export_ACPCheckTitleLaunchByTitleListType(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamStructPtr(titleInfo, MCPTitleInfo, 0);
+		if (!titleInfo)
+		{
+			cemuLog_log(LogType::Force, "ACPCheckTitleLaunchByTitleListType(null, 0x{:08x}) (LR 0x{:08x})", hCPU->gpr[4], hCPU->spr.LR);
+			osLib_returnFromFunction(hCPU, (uint32)ACP_RESULT_NOT_FOUND);
+			return;
+		}
+		uint64 titleId = ((uint64)(uint32)titleInfo->titleIdHigh << 32) | (uint64)(uint32)titleInfo->titleIdLow;
+		bool launchable = ACPIsTitleLaunchable(titleId);
+		s_lastLaunchCheckedTitleId.store(titleId);
+		cemuLog_log(LogType::Force, "ACPCheckTitleLaunchByTitleListType({:016x}, 0x{:08x}) -> {} (LR 0x{:08x})",
+					titleId, hCPU->gpr[4], launchable ? "launchable" : "not installed/invalid", hCPU->spr.LR);
+		osLib_returnFromFunction(hCPU, launchable ? (uint32)ACPStatus::SUCCESS : (uint32)ACP_RESULT_NOT_FOUND);
+	}
+
 	ACPStatus ACPConvertResultToACPStatus(uint32* nnResult, const char* functionName, uint32 lineNumber)
 	{
 		// todo
@@ -355,6 +394,7 @@ namespace acp
 			osLib_addFunction("nn_acp", "ACPGetTitleSaveDirEx", export_ACPGetTitleSaveDirEx);
 
 			osLib_addFunction("nn_acp", "ACPCheckTitleNotReferAccountLaunch", export_ACPCheckTitleNotReferAccountLaunch);
+			osLib_addFunction("nn_acp", "ACPCheckTitleLaunchByTitleListType", export_ACPCheckTitleLaunchByTitleListType);
 			osLib_addFunction("nn_acp", "ACPGetLaunchMetaData", export_ACPGetLaunchMetaData);
 			osLib_addFunction("nn_acp", "ACPGetLaunchMetaXml", export_ACPGetLaunchMetaXml);
 			osLib_addFunction("nn_acp", "ACPGetTitleIdOfMainApplication", export_ACPGetTitleIdOfMainApplication);

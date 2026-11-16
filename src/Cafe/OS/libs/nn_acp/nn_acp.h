@@ -13,6 +13,9 @@ namespace acp
 
 	using ACPDeviceType = iosu::acp::ACPDeviceType;
 
+	bool ACPIsTitleLaunchable(uint64 titleId); // installed and has valid app/cos/meta xml
+	uint64 ACPGetLastLaunchCheckedTitleId(); // last title passed to ACPCheckTitleLaunchByTitleListType (0 if none)
+
 	ACPStatus ACPGetApplicationBox(uint32be* applicationBox, uint64 titleId);
 	ACPStatus ACPMountSaveDir();
     ACPStatus ACPUnmountSaveDir();

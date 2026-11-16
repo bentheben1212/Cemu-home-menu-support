@@ -4,6 +4,7 @@
 #include "Cafe/OS/libs/coreinit/coreinit_FG.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/TitleList/TitleList.h"
+#include "Cafe/OS/libs/nn_acp/nn_acp.h"
 
 typedef struct  
 {
@@ -471,72 +472,43 @@ void sysappExport__SYSGetEShopArgs(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
-void sysappExport_SYSGetUPIDFromTitleID(PPCInterpreter_t* hCPU)
+// maps a title id to its PFID/UPID (SysAppPFID). Returns -1 if unknown
+sint32 _SYSGetUPIDFromTitleId(uint64 titleId)
 {
-	ppcDefineParamU64(titleId, 0);
 	uint32 titleIdHigh = (titleId >> 32);
 	uint32 titleIdLow = (uint32)(titleId & 0xFFFFFFFF);
 	if ((titleIdHigh & 0xFFFF0000) != 0x50000)
-	{
-		osLib_returnFromFunction(hCPU, -1);
-		return;
-	}
+		return -1;
 	if ((titleIdLow & 0xF0000000) != 0x10000000)
-	{
-		osLib_returnFromFunction(hCPU, -1);
-		return;
-	}
+		return -1;
 	uint32 titleId_type = (titleIdHigh & 0xFF);
-
 	if (titleId_type == 0x30)
 	{
 		// applet
+		static const uint8 appletTable[10] = { 5,6,8,3,0xA,0xB,9,4,0xC,7 };
 		uint32 ukn = ((titleIdLow >> 12) & 0xFFFF);
-		if (ukn < 0x10)
-		{
-			osLib_returnFromFunction(hCPU, -1);
-			return;
-		}
-		else if (ukn <= 0x19)
-		{
-			uint8 appletTable10[10] = { 5,6,8,3,0xA,0xB,9,4,0xC,7 };
-			osLib_returnFromFunction(hCPU, appletTable10[ukn - 0x10]);
-			return;
-		}
-		else if (ukn <= 0x20)
-		{
-			assert_dbg();
-			osLib_returnFromFunction(hCPU, -1);
-			return;
-		}
-		else if (ukn <= 0x29)
-		{
-			uint8 appletTable20[10] = {5,6,8,3,0xA,0xB,9,4,0xC,7};
-			osLib_returnFromFunction(hCPU, appletTable20[ukn-0x20]);
-			return;
-		}
-		assert_dbg();
-		osLib_returnFromFunction(hCPU, -1);
-		return;
+		if (ukn >= 0x10 && ukn <= 0x19)
+			return appletTable[ukn - 0x10];
+		if (ukn >= 0x20 && ukn <= 0x29)
+			return appletTable[ukn - 0x20];
+		return -1;
 	}
 	else if (titleId_type == 0x10)
 	{
 		// system application
 		if (((titleIdLow >> 12) & 0xFFFF) == 0x40)
-		{
-			// Wii U menu
-			osLib_returnFromFunction(hCPU, 2);
-			return;
-		}
-		osLib_returnFromFunction(hCPU, 0xF);
-		return;
+			return 2; // Wii U menu
+		return 0xF;
 	}
 	else if (titleId_type == 0x00 || titleId_type == 0x02)
-	{
-		osLib_returnFromFunction(hCPU, 0xF);
-		return;
-	}
-	osLib_returnFromFunction(hCPU, -1);
+		return 0xF;
+	return -1;
+}
+
+void sysappExport_SYSGetUPIDFromTitleID(PPCInterpreter_t* hCPU)
+{
+	ppcDefineParamU64(titleId, 0);
+	osLib_returnFromFunction(hCPU, (uint32)_SYSGetUPIDFromTitleId(titleId));
 }
 
 void sysappExport_SYSGetVodArgs(PPCInterpreter_t* hCPU)
@@ -667,6 +639,78 @@ namespace sysapp
 		coreinit::__LaunchByTitleId(menuTitleId, 0, nullptr);
 	}
 
+	// finds an installed, launchable applet for the given PFID. If several match, prefer the title the menu just checked
+	// via ACPCheckTitleLaunchByTitleListType. Falls back to that checked title if no applet matches the PFID
+	static uint64 _SYSResolvePFIDToTitleId(sint32 pfid)
+	{
+		uint64 checkedTitleId = nn::acp::ACPGetLastLaunchCheckedTitleId();
+		if (pfid == 2) // Wii U Menu
+			return _SYSFindWiiUMenuTitleId();
+		if (checkedTitleId != 0 && _SYSGetUPIDFromTitleId(checkedTitleId) == pfid && nn::acp::ACPIsTitleLaunchable(checkedTitleId))
+			return checkedTitleId;
+		for (TitleId titleId : CafeTitleList::GetAllTitleIds())
+		{
+			if (TitleIdParser(titleId).GetType() != TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE)
+				continue;
+			if (_SYSGetUPIDFromTitleId(titleId) == pfid && nn::acp::ACPIsTitleLaunchable(titleId))
+				return titleId;
+		}
+		if (checkedTitleId != 0 && nn::acp::ACPIsTitleLaunchable(checkedTitleId))
+		{
+			cemuLog_log(LogType::Force, "No installed applet matches PFID {}, using last launch-checked title {:016x} (PFID {})", pfid, checkedTitleId, _SYSGetUPIDFromTitleId(checkedTitleId));
+			return checkedTitleId;
+		}
+		return 0;
+	}
+
+	static uint32 _SYSSwitchToTitle(const char* funcName, uint64 titleId)
+	{
+		if (titleId == 0 || !nn::acp::ACPIsTitleLaunchable(titleId))
+		{
+			cemuLog_log(LogType::Force, "{}: Title {:016x} is not installed or not launchable. Switch aborted", funcName, titleId);
+			return 0xFFFFFFFF;
+		}
+		cemuLog_log(LogType::Force, "{}: Switching from {:016x} to {:016x}", funcName, CafeSystem::GetForegroundTitleId(), titleId);
+		_SYSAppendCallerInfo();
+		coreinit::__LaunchByTitleId(titleId, 0, nullptr); // records the current title as the caller (main app) of applets
+		return 0;
+	}
+
+	uint32 _SYSSwitchTo(sint32 pfid)
+	{
+		cemuLog_log(LogType::Force, "_SYSSwitchTo(pfid {}) (LR 0x{:08x})", pfid, PPCInterpreter_getCurrentInstance()->spr.LR);
+		return _SYSSwitchToTitle("_SYSSwitchTo", _SYSResolvePFIDToTitleId(pfid));
+	}
+
+	uint32 SYSSwitchTo(sint32 pfid)
+	{
+		cemuLog_log(LogType::Force, "SYSSwitchTo(pfid {}) (LR 0x{:08x})", pfid, PPCInterpreter_getCurrentInstance()->spr.LR);
+		coreinit::__OSClearCopyData();
+		return _SYSSwitchToTitle("SYSSwitchTo", _SYSResolvePFIDToTitleId(pfid));
+	}
+
+	uint32 _SYSDirectlySwitchTo(sint32 pfid)
+	{
+		cemuLog_log(LogType::Force, "_SYSDirectlySwitchTo(pfid {}) (LR 0x{:08x})", pfid, PPCInterpreter_getCurrentInstance()->spr.LR);
+		return _SYSSwitchToTitle("_SYSDirectlySwitchTo", _SYSResolvePFIDToTitleId(pfid));
+	}
+
+	uint32 SYSLaunchTitle(uint64 titleId)
+	{
+		cemuLog_log(LogType::Force, "SYSLaunchTitle({:016x}) (LR 0x{:08x})", titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
+		coreinit::__OSClearCopyData();
+		return _SYSSwitchToTitle("SYSLaunchTitle", titleId);
+	}
+
+	uint32 _SYSLaunchTitleWithStdArgsInNoSplash(uint64 titleId, sysStandardArguments_t* stdArgs)
+	{
+		cemuLog_log(LogType::Force, "_SYSLaunchTitleWithStdArgsInNoSplash({:016x}) (LR 0x{:08x})", titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
+		coreinit::__OSClearCopyData();
+		if (stdArgs)
+			_SYSSerializeStandardArgsIn(stdArgs);
+		return _SYSSwitchToTitle("_SYSLaunchTitleWithStdArgsInNoSplash", titleId);
+	}
+
 	// called by applets when closing. The applet then finalizes its libraries and calls _Exit(),
 	// at which point the queued switch back to the caller happens (see coreinit::__ExitProcessOrSwitch)
 	uint32 _SYSSwitchToMainApp()
@@ -725,6 +769,11 @@ namespace sysapp
 		cafeExportRegisterFunc(SYSRelaunchTitle, "sysapp", "SYSRelaunchTitle", LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSLaunchMenu, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToMainApp, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchTo, LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSSwitchTo, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSDirectlySwitchTo, LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSLaunchTitle, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSLaunchTitleWithStdArgsInNoSplash, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
 	}
