@@ -3,6 +3,7 @@
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
 
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
+#include "Cafe/CafeSystem.h"
 
 // includes for Initialize coreinit submodules
 #include "Cafe/OS/libs/coreinit/coreinit_BSP.h"
@@ -264,9 +265,23 @@ namespace coreinit
 		cemuLog_log(LogType::Force, "File: {}:{}", file, lineNumber);
 		cemuLog_log(LogType::Force, "Msg: {}", msg);
 		DebugLogStackTrace(coreinit::OSGetCurrentThread(), coreinit::OSGetStackPointer());
+		coreinit::__OSDumpRecentConsoleOutput(); // asserts usually print their reason via OSReport before panicking
 #ifdef CEMU_DEBUG_ASSERT
 		while (true) std::this_thread::sleep_for(std::chrono::milliseconds(100));
 #endif
+		// OSPanic never returns on hardware. Returning would run into the title's deliberate crash code
+		// (e.g. a store to address 0 after a failed assert) and take down Cemu
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		uint64 mainAppTitleId = coreinit::__OSGetMainAppTitleId();
+		if (coreinit::__OSGetCallerTitleId() != 0 && mainAppTitleId != 0 && mainAppTitleId != currentTitleId)
+		{
+			cemuLog_log(LogType::Force, "OSPanic: returning to main app {:016x}", mainAppTitleId);
+			coreinit::__LaunchByTitleId(mainAppTitleId, 0, nullptr); // suspends this thread and switches title
+			return;
+		}
+		cemuLog_log(LogType::Force, "OSPanic: halting thread");
+		while (true)
+			coreinit::OSSuspendThread(coreinit::OSGetCurrentThread());
 	}
 
 	void InitializeCore()

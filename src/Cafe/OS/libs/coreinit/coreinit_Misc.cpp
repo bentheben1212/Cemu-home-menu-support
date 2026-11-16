@@ -547,6 +547,20 @@ namespace coreinit
 
 	std::mutex sCafeConsoleMutex;
 	bool s_forwardConsoleLogs;
+	std::deque<std::string> s_recentConsoleLines; // last lines written to the console, dumped on OSPanic
+	static constexpr size_t RECENT_CONSOLE_LINES = 32;
+
+	// writes the most recent console output to the log, even if console logging is disabled
+	void __OSDumpRecentConsoleOutput()
+	{
+		std::unique_lock _l(sCafeConsoleMutex);
+		cemuLog_log(LogType::Force, "Recent console output (last {} lines):", s_recentConsoleLines.size());
+		for (auto& line : s_recentConsoleLines)
+			cemuLog_log(LogType::Force, "  {}", line);
+		CafeLogBuffer& logBuffer = g_logBuffer_OSReport;
+		if (logBuffer.lineLength > 0)
+			cemuLog_log(LogType::Force, "  {}", std::string_view(logBuffer.lineBuffer.data(), logBuffer.lineLength));
+	}
 	
 	void WriteCafeConsole(CafeLogType cafeLogType, const char* msg, sint32 len)
 	{
@@ -556,6 +570,9 @@ namespace coreinit
 		auto flushLine = [](CafeLogBuffer& cafeLogBuffer, std::string_view cafeLogName) -> void
 		{
 			cemuLog_log(LogType::CoreinitLogging, "[{0}] {1}", cafeLogName, std::basic_string_view(cafeLogBuffer.lineBuffer.data(), cafeLogBuffer.lineLength));
+			s_recentConsoleLines.emplace_back(cafeLogBuffer.lineBuffer.data(), cafeLogBuffer.lineLength);
+			if (s_recentConsoleLines.size() > RECENT_CONSOLE_LINES)
+				s_recentConsoleLines.pop_front();
 			cafeLogBuffer.lineLength = 0;
 		};
 

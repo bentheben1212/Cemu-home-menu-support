@@ -12,6 +12,7 @@ namespace coreinit
 	uint64 __OSGetMainAppTitleId(); // title that launched the current applet (0 if unknown)
 	void __OSQueueTitleSwitch(uint64 titleId); // switch to this title when the process exits
 	uint64 __OSGetCallerTitleId(); // title that launched the current one (0 if started directly)
+	void __OSDumpRecentConsoleOutput(); // log the last console (OSReport) lines regardless of log settings
 	void __OSRequestProcessExit(); // ask the app to exit via ProcUI (ReleaseForeground -> Exit system messages)
 
 	void OSReleaseForeground();
