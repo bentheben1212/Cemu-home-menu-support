@@ -47,6 +47,9 @@ void MCP_Close(MCPHANDLE mcpHandle);
 sint32 MCP_GetSysProdSettings(MCPHANDLE mcpHandle, SysProdSettings* sysProdSettings);
 
 void coreinitExport_UCReadSysConfig(PPCInterpreter_t* hCPU);
+void coreinitExport_UCWriteSysConfig(PPCInterpreter_t* hCPU);
+void coreinitExport_UCOpen(PPCInterpreter_t* hCPU);
+void coreinitExport_UCClose(PPCInterpreter_t* hCPU);
 
 namespace coreinit
 {

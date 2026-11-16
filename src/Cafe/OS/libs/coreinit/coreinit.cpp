@@ -360,6 +360,9 @@ namespace coreinit
 			coreinit::miscInit();
 			osLib_addFunction("coreinit", "OSGetSharedData", coreinitExport_OSGetSharedData);
 			osLib_addFunction("coreinit", "UCReadSysConfig", coreinitExport_UCReadSysConfig);
+			osLib_addFunction("coreinit", "UCWriteSysConfig", coreinitExport_UCWriteSysConfig);
+			osLib_addFunction("coreinit", "UCOpen", coreinitExport_UCOpen);
+			osLib_addFunction("coreinit", "UCClose", coreinitExport_UCClose);
 		};
 
 		void RPLUnmapped() override

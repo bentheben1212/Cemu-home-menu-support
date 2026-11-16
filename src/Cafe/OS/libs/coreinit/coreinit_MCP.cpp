@@ -10,6 +10,9 @@
 #include "config/CemuConfig.h"
 
 #include "Cafe/CafeSystem.h"
+#include "config/ActiveSettings.h"
+#include <pugixml.hpp>
+#include <boost/algorithm/string.hpp>
 
 #define mcpPrepareRequest() \
 StackAllocator<iosuMcpCemuRequest_t> _buf_mcpRequest; \
@@ -480,156 +483,529 @@ static_assert(sizeof(UCParamStruct_t) == 0x54); // unsure
 #define _strcmpi strcasecmp
 #endif
 
-void coreinitExport_UCReadSysConfig(PPCInterpreter_t* hCPU)
+// Values Cemu provides when an item is not in the console's sys/config files (previous hardcoded behaviour).
+// Returns false if the item is unknown
+static bool _UCReadSysConfigDefault(UCParamStruct_t* ucParam)
 {
-	// parameters:
-	// r3 = UC handle?
-	// r4 = Number of values to read (count of UCParamStruct_t entries)
-	// r5 = UCParamStruct_t*
-	UCParamStruct_t* ucParamBase = (UCParamStruct_t*)memory_getPointerFromVirtualOffset(hCPU->gpr[5]);
-	uint32 ucParamCount = hCPU->gpr[4];
-	for(uint32 i=0; i<ucParamCount; i++)
+	if(_strcmpi(ucParam->settingName, "cafe.cntry_reg") == 0)
 	{
-		UCParamStruct_t* ucParam = ucParamBase+i;
-		if(_strcmpi(ucParam->settingName, "cafe.cntry_reg") == 0)
-		{
-			// country code
-			// get country from simple address
-			uint32be simpleAddress = 0;
-			nn::act::GetSimpleAddressIdEx(&simpleAddress, nn::act::ACT_SLOT_CURRENT);
+		// country code
+		// get country from simple address
+		uint32be simpleAddress = 0;
+		nn::act::GetSimpleAddressIdEx(&simpleAddress, nn::act::ACT_SLOT_CURRENT);
 
-			uint32 countryCode = nn::act::getCountryCodeFromSimpleAddress(simpleAddress);
+		uint32 countryCode = nn::act::getCountryCodeFromSimpleAddress(simpleAddress);
 
-			if( ucParam->resultPtr != _swapEndianU32(MPTR_NULL) )
-				memory_writeU32(_swapEndianU32(ucParam->resultPtr), countryCode);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.language") == 0)
-		{
-			// language
-			// 0 -> Japanese
-			// 1 -> English
-			// ...
-			uint32 languageId = (uint32)GetConfig().console_language.GetValue();
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU32(_swapEndianU32(ucParam->resultPtr), languageId);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.initial_launch") == 0)
-		{
-			// initial launch
-			// possible ids:
-			// 0xFF		Set by SCIFormatSystem (default?)
-			// 0x01		Inited but no user created yet (setting this will make the home menu go into user creation dialog)
-			// 0x02		Inited, with user
-			// other values are unknown
-			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 2);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.eula_version") == 0)
-		{
-			// todo - investigate values
+		if( ucParam->resultPtr != _swapEndianU32(MPTR_NULL) )
+			memory_writeU32(_swapEndianU32(ucParam->resultPtr), countryCode);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.language") == 0)
+	{
+		// language
+		// 0 -> Japanese
+		// 1 -> English
+		// ...
+		uint32 languageId = (uint32)GetConfig().console_language.GetValue();
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU32(_swapEndianU32(ucParam->resultPtr), languageId);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.initial_launch") == 0)
+	{
+		// initial launch
+		// possible ids:
+		// 0xFF		Set by SCIFormatSystem (default?)
+		// 0x01		Inited but no user created yet (setting this will make the home menu go into user creation dialog)
+		// 0x02		Inited, with user
+		// other values are unknown
+		memory_writeU8(_swapEndianU32(ucParam->resultPtr), 2);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.eula_version") == 0)
+	{
+		// todo - investigate values
+		memory_writeU32(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.eula_agree") == 0)
+	{
+		// todo - investigate values
+		memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.version") == 0)
+	{
+		// todo - investigate values
+		memory_writeU16(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.eco") == 0)
+	{
+		// todo - investigate values
+		memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "cafe.fast_boot") == 0)
+	{
+		// todo - investigate values
+		memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "parent.enable") == 0)
+	{
+		// parental feature enabled
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
 			memory_writeU32(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.eula_agree") == 0)
-		{
-			// todo - investigate values
+	}
+	else if (_strcmpi(ucParam->settingName, "nn.act.account_repaired") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
 			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.version") == 0)
+	}
+	else if (_strcmpi(ucParam->settingName, "p_acct1.net_communication_on_game") == 0)
+	{
+		// get parental online control for online features
+		// note: This option is account-bound, the p_acct1 prefix indicates that the account in slot 1 is used
+		// a non-zero value means network access is restricted through parental access. 0 means allowed
+		// account in slot 1
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // data type is guessed
+	}
+	else if (_strcmpi(ucParam->settingName, "p_acct1.int_movie") == 0)
+	{
+		// get parental online control for movies?
+		// used by Pikmin HD movies
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // 0 -> allowed
+	}
+	else if (_strcmpi(ucParam->settingName, "p_acct1.network_launcher") == 0)
+	{
+		// miiverse restrictions
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // data type is guessed (0 -> no restrictions, 1 -> read only, 2 -> no access)
+	}
+	else if (_strcmpi(ucParam->settingName, "s_acct01.uuid") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL) && ucParam->ukn4_size >= 37)
 		{
-			// todo - investigate values
-			memory_writeU16(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.eco") == 0)
-		{
-			// todo - investigate values
-			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "cafe.fast_boot") == 0)
-		{
-			// todo - investigate values
-			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "parent.enable") == 0)
-		{
-			// parental feature enabled
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU32(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "nn.act.account_repaired") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "p_acct1.net_communication_on_game") == 0)
-		{
-			// get parental online control for online features
-			// note: This option is account-bound, the p_acct1 prefix indicates that the account in slot 1 is used
-			// a non-zero value means network access is restricted through parental access. 0 means allowed
-			// account in slot 1
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // data type is guessed
-		}
-		else if (_strcmpi(ucParam->settingName, "p_acct1.int_movie") == 0)
-		{
-			// get parental online control for movies?
-			// used by Pikmin HD movies
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // 0 -> allowed
-		}
-		else if (_strcmpi(ucParam->settingName, "p_acct1.network_launcher") == 0)
-		{
-			// miiverse restrictions
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0); // data type is guessed (0 -> no restrictions, 1 -> read only, 2 -> no access)
-		}
-		else if (_strcmpi(ucParam->settingName, "s_acct01.uuid") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL) && ucParam->ukn4_size >= 37)
-			{
-				StackAllocator<uint8, 16> _uuid;
-				uint8* uuid = _uuid.GetPointer();
-				nn::act::GetUuidEx(uuid, 1, 0);
-				char tempStr[64];
-				sprintf(tempStr, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X", uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
-					uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
-				strcpy((char*)memory_getPointerFromVirtualOffset(_swapEndianU32(ucParam->resultPtr)), tempStr);
-			}
-		}
-		else if (_strcmpi(ucParam->settingName, "s_acct01.nn.ec.eshop_initialized") == 0)
-		{
-			// E-Shop welcome screen
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 1); // data type is guessed
-		}
-		else if (_strcmpi(ucParam->settingName, "p_acct1.int_browser") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		/* caffeine settings (Quick Start) */
-		else if (_strcmpi(ucParam->settingName, "caffeine.enable") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 1);
-		}
-		else if (_strcmpi(ucParam->settingName, "caffeine.ad_enable") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "caffeine.push_enable") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else if (_strcmpi(ucParam->settingName, "caffeine.drcled_enable") == 0)
-		{
-			if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
-				memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
-		}
-		else
-		{
-			cemuLog_logDebug(LogType::Force, "Unsupported SCI value: {} Size {:08x}", ucParam->settingName, ucParam->ukn4_size);
+			StackAllocator<uint8, 16> _uuid;
+			uint8* uuid = _uuid.GetPointer();
+			nn::act::GetUuidEx(uuid, 1, 0);
+			char tempStr[64];
+			sprintf(tempStr, "%02X%02X%02X%02X-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X", uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7],
+				uuid[8], uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
+			strcpy((char*)memory_getPointerFromVirtualOffset(_swapEndianU32(ucParam->resultPtr)), tempStr);
 		}
 	}
+	else if (_strcmpi(ucParam->settingName, "s_acct01.nn.ec.eshop_initialized") == 0)
+	{
+		// E-Shop welcome screen
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 1); // data type is guessed
+	}
+	else if (_strcmpi(ucParam->settingName, "p_acct1.int_browser") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	/* caffeine settings (Quick Start) */
+	else if (_strcmpi(ucParam->settingName, "caffeine.enable") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 1);
+	}
+	else if (_strcmpi(ucParam->settingName, "caffeine.ad_enable") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "caffeine.push_enable") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else if (_strcmpi(ucParam->settingName, "caffeine.drcled_enable") == 0)
+	{
+		if (ucParam->resultPtr != _swapEndianU32(MPTR_NULL))
+			memory_writeU8(_swapEndianU32(ucParam->resultPtr), 0);
+	}
+	else
+		return false;
+	return true;
+}
+
+// UC (user/system config) items are stored like on a real console: /sys/config/<group>.xml
+// Item "cafe.eula_agree" -> mlc01/sys/config/cafe.xml -> <cafe><eula_agree type="unsignedByte" length="1">1</eula_agree></cafe>
+// Longer names map to nested elements: "s_acct01.nn.ec.eshop_initialized" -> s_acct01.xml <s_acct01><nn><ec><eshop_initialized>
+namespace uc
+{
+	enum class UCDataType : uint32
+	{
+		Undefined = 0x00,
+		UnsignedByte = 0x01,
+		UnsignedShort = 0x02,
+		UnsignedInt = 0x03,
+		SignedInt = 0x04,
+		Float = 0x05,
+		String = 0x06,
+		HexBinary = 0x07,
+		ComplexType = 0x08, // "Complex" collides with an X11 macro
+	};
+
+	static std::recursive_mutex s_ucMutex;
+
+	static const char* DataTypeToXmlName(UCDataType t)
+	{
+		switch (t)
+		{
+		case UCDataType::UnsignedByte: return "unsignedByte";
+		case UCDataType::UnsignedShort: return "unsignedShort";
+		case UCDataType::UnsignedInt: return "unsignedInt";
+		case UCDataType::SignedInt: return "int";
+		case UCDataType::Float: return "float";
+		case UCDataType::String: return "string";
+		case UCDataType::HexBinary: return "hexBinary";
+		case UCDataType::ComplexType: return "complex";
+		default: return nullptr;
+		}
+	}
+
+	static UCDataType DataTypeFromXmlName(std::string_view name)
+	{
+		for (uint32 i = 1; i <= 8; i++)
+		{
+			const char* n = DataTypeToXmlName((UCDataType)i);
+			if (n && boost::iequals(name, n))
+				return (UCDataType)i;
+		}
+		return UCDataType::Undefined;
+	}
+
+	static UCDataType DataTypeFromSize(uint32 size)
+	{
+		if (size == 1) return UCDataType::UnsignedByte;
+		if (size == 2) return UCDataType::UnsignedShort;
+		if (size == 4) return UCDataType::UnsignedInt;
+		return UCDataType::Undefined;
+	}
+
+	static std::string GetItemName(UCParamStruct_t* ucParam)
+	{
+		return std::string(ucParam->settingName, strnlen(ucParam->settingName, sizeof(ucParam->settingName)));
+	}
+
+	// "cafe.eula_agree" -> group "cafe", path {"eula_agree"}. Components are restricted to safe characters (no path traversal)
+	static bool SplitItemName(const std::string& name, std::string& groupOut, std::vector<std::string>& pathOut)
+	{
+		pathOut.clear();
+		std::vector<std::string> parts;
+		boost::split(parts, name, boost::is_any_of("."));
+		if (parts.size() < 2)
+			return false;
+		for (auto& p : parts)
+		{
+			if (p.empty())
+				return false;
+			for (char c : p)
+				if (!(isalnum((unsigned char)c) || c == '_' || c == '-'))
+					return false;
+		}
+		groupOut = parts[0];
+		pathOut.assign(parts.begin() + 1, parts.end());
+		return true;
+	}
+
+	static fs::path GetGroupFilePath(const std::string& group)
+	{
+		return ActiveSettings::GetMlcPath("sys/config/{}.xml", group);
+	}
+
+	static bool LoadGroupFile(const fs::path& path, pugi::xml_document& doc)
+	{
+		std::error_code ec;
+		if (!fs::exists(path, ec))
+			return false;
+		pugi::xml_parse_result r = doc.load_file(path.c_str(), pugi::parse_default | pugi::parse_declaration);
+		if (!r)
+		{
+			cemuLog_log(LogType::Force, "UC: Failed to parse {}: {}", _pathToUtf8(path), r.description());
+			return false;
+		}
+		return true;
+	}
+
+	static bool SaveGroupFile(const fs::path& path, pugi::xml_document& doc)
+	{
+		std::error_code ec;
+		fs::create_directories(path.parent_path(), ec);
+		fs::path tmpPath = path;
+		tmpPath += ".tmp";
+		if (!doc.save_file(tmpPath.c_str(), "  ", pugi::format_default, pugi::encoding_utf8))
+		{
+			cemuLog_log(LogType::Force, "UC: Failed to write {}", _pathToUtf8(tmpPath));
+			return false;
+		}
+		fs::rename(tmpPath, path, ec);
+		if (ec)
+		{
+			cemuLog_log(LogType::Force, "UC: Failed to replace {}: {}", _pathToUtf8(path), ec.message());
+			fs::remove(tmpPath, ec);
+			return false;
+		}
+		return true;
+	}
+
+	static bool ParseInteger(const char* text, sint64& valueOut)
+	{
+		std::string_view sv(text);
+		while (!sv.empty() && isspace((unsigned char)sv.front())) sv.remove_prefix(1);
+		while (!sv.empty() && isspace((unsigned char)sv.back())) sv.remove_suffix(1);
+		if (sv.empty())
+			return false;
+		std::string s(sv);
+		char* end = nullptr;
+		if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
+			valueOut = (sint64)strtoull(s.c_str() + 2, &end, 16);
+		else
+			valueOut = strtoll(s.c_str(), &end, 10);
+		return end && *end == '\0';
+	}
+
+	// converts the guest value of an item to its XML text representation
+	static bool GuestValueToText(UCDataType type, MPTR dataPtr, uint32 dataSize, std::string& textOut)
+	{
+		if (dataPtr == MPTR_NULL)
+			return false;
+		switch (type)
+		{
+		case UCDataType::UnsignedByte: textOut = fmt::format("{}", memory_readU8(dataPtr)); return true;
+		case UCDataType::UnsignedShort: textOut = fmt::format("{}", memory_readU16(dataPtr)); return true;
+		case UCDataType::UnsignedInt: textOut = fmt::format("{}", memory_readU32(dataPtr)); return true;
+		case UCDataType::SignedInt: textOut = fmt::format("{}", (sint32)memory_readU32(dataPtr)); return true;
+		case UCDataType::Float: textOut = fmt::format("{}", memory_readFloat(dataPtr)); return true;
+		case UCDataType::String:
+		{
+			const char* str = (const char*)memory_getPointerFromVirtualOffset(dataPtr);
+			textOut.assign(str, strnlen(str, dataSize));
+			return true;
+		}
+		case UCDataType::HexBinary:
+		{
+			const uint8* bin = memory_getPointerFromVirtualOffset(dataPtr);
+			textOut.clear();
+			for (uint32 i = 0; i < dataSize; i++)
+				textOut.append(fmt::format("{:02x}", bin[i]));
+			return true;
+		}
+		default:
+			return false;
+		}
+	}
+
+	// writes an XML text value into guest memory using the requested type/size
+	static bool TextToGuestValue(UCDataType type, const char* text, MPTR dataPtr, uint32 dataSize)
+	{
+		if (dataPtr == MPTR_NULL)
+			return false;
+		sint64 v = 0;
+		switch (type)
+		{
+		case UCDataType::UnsignedByte:
+			if (!ParseInteger(text, v)) return false;
+			memory_writeU8(dataPtr, (uint8)v);
+			return true;
+		case UCDataType::UnsignedShort:
+			if (!ParseInteger(text, v)) return false;
+			memory_writeU16(dataPtr, (uint16)v);
+			return true;
+		case UCDataType::UnsignedInt:
+		case UCDataType::SignedInt:
+			if (!ParseInteger(text, v)) return false;
+			memory_writeU32(dataPtr, (uint32)v);
+			return true;
+		case UCDataType::Float:
+			memory_writeFloat(dataPtr, (float)atof(text));
+			return true;
+		case UCDataType::String:
+		{
+			if (dataSize == 0) return false;
+			char* out = (char*)memory_getPointerFromVirtualOffset(dataPtr);
+			size_t len = std::min<size_t>(strlen(text), dataSize - 1);
+			memcpy(out, text, len);
+			out[len] = '\0';
+			return true;
+		}
+		case UCDataType::HexBinary:
+		{
+			uint8* out = memory_getPointerFromVirtualOffset(dataPtr);
+			memset(out, 0, dataSize);
+			size_t textLen = strlen(text);
+			for (uint32 i = 0; i < dataSize && (i * 2 + 1) < textLen; i++)
+			{
+				char byteStr[3] = { text[i * 2], text[i * 2 + 1], 0 };
+				out[i] = (uint8)strtoul(byteStr, nullptr, 16);
+			}
+			return true;
+		}
+		default:
+			return false;
+		}
+	}
+
+	static pugi::xml_node FindItemNode(pugi::xml_document& doc, const std::string& group, const std::vector<std::string>& path)
+	{
+		pugi::xml_node node = doc.child(group.c_str());
+		for (auto& p : path)
+		{
+			if (!node)
+				break;
+			node = node.child(p.c_str());
+		}
+		return node;
+	}
+
+	// these items are controlled by Cemu settings / Cemu's account system instead of the config files
+	static bool IsCemuManagedItem(const std::string& name)
+	{
+		return boost::iequals(name, "cafe.language") || boost::iequals(name, "cafe.cntry_reg") || boost::iequals(name, "s_acct01.uuid");
+	}
+
+	static void SetItemError(UCParamStruct_t* ucParam, uint32 error)
+	{
+		ucParam->ukn3 = _swapEndianU32(error);
+	}
+
+	void ReadItem(UCParamStruct_t* ucParam)
+	{
+		std::unique_lock _l(s_ucMutex);
+		std::string name = GetItemName(ucParam);
+		UCDataType reqType = (UCDataType)_swapEndianU32(ucParam->ukn2);
+		uint32 dataSize = _swapEndianU32(ucParam->ukn4_size);
+		MPTR dataPtr = _swapEndianU32(ucParam->resultPtr);
+		if (!IsCemuManagedItem(name))
+		{
+			std::string group;
+			std::vector<std::string> path;
+			if (SplitItemName(name, group, path))
+			{
+				fs::path filePath = GetGroupFilePath(group);
+				pugi::xml_document doc;
+				if (LoadGroupFile(filePath, doc))
+				{
+					pugi::xml_node node = FindItemNode(doc, group, path);
+					if (node)
+					{
+						UCDataType type = reqType;
+						if (type == UCDataType::Undefined)
+							type = DataTypeFromXmlName(node.attribute("type").as_string());
+						if (type == UCDataType::Undefined)
+							type = DataTypeFromSize(dataSize);
+						const char* text = node.text().as_string();
+						if (TextToGuestValue(type, text, dataPtr, dataSize))
+						{
+							SetItemError(ucParam, 0);
+							cemuLog_log(LogType::Force, "UC read {} = \"{}\" (type {}, size {}) from {}", name, text, (uint32)type, dataSize, _pathToUtf8(filePath));
+							return;
+						}
+						cemuLog_log(LogType::Force, "UC read {}: cannot convert \"{}\" to type {} size {} ({}), using default", name, text, (uint32)type, dataSize, _pathToUtf8(filePath));
+					}
+				}
+			}
+		}
+		// Cemu-managed item, or not present in the console config files
+		bool handled = _UCReadSysConfigDefault(ucParam);
+		std::string valueText = "?";
+		UCDataType logType = reqType != UCDataType::Undefined ? reqType : DataTypeFromSize(dataSize);
+		if (handled)
+		{
+			GuestValueToText(logType, dataPtr, dataSize, valueText);
+			SetItemError(ucParam, 0);
+		}
+		cemuLog_log(LogType::Force, "UC read {} = \"{}\" (type {}, size {}) {}", name, valueText, (uint32)reqType, dataSize,
+					!handled ? "NOT FOUND (not in config files, no default)" : (IsCemuManagedItem(name) ? "from Cemu settings" : "Cemu default (not in config files)"));
+	}
+
+	void WriteItem(UCParamStruct_t* ucParam)
+	{
+		std::unique_lock _l(s_ucMutex);
+		std::string name = GetItemName(ucParam);
+		UCDataType type = (UCDataType)_swapEndianU32(ucParam->ukn2);
+		uint32 dataSize = _swapEndianU32(ucParam->ukn4_size);
+		MPTR dataPtr = _swapEndianU32(ucParam->resultPtr);
+		std::string group;
+		std::vector<std::string> path;
+		if (!SplitItemName(name, group, path))
+		{
+			cemuLog_log(LogType::Force, "UC write {}: invalid item name, ignored", name);
+			return;
+		}
+		fs::path filePath = GetGroupFilePath(group);
+		pugi::xml_document doc;
+		LoadGroupFile(filePath, doc);
+		// find or create the item element
+		pugi::xml_node node = doc.child(group.c_str());
+		if (!node)
+			node = doc.append_child(group.c_str());
+		for (auto& p : path)
+		{
+			pugi::xml_node child = node.child(p.c_str());
+			if (!child)
+			{
+				child = node.append_child(p.c_str());
+				if (&p != &path.back())
+					child.append_attribute("type") = "complex";
+			}
+			node = child;
+		}
+		if (type == UCDataType::Undefined)
+			type = DataTypeFromXmlName(node.attribute("type").as_string());
+		if (type == UCDataType::Undefined)
+			type = DataTypeFromSize(dataSize);
+		std::string valueText;
+		if (!GuestValueToText(type, dataPtr, dataSize, valueText))
+		{
+			cemuLog_log(LogType::Force, "UC write {}: unsupported type {} size {}, ignored", name, (uint32)type, dataSize);
+			return;
+		}
+		node.text().set(valueText.c_str());
+		if (const char* typeName = DataTypeToXmlName(type))
+		{
+			if (!node.attribute("type"))
+				node.append_attribute("type");
+			node.attribute("type") = typeName;
+		}
+		if (!node.attribute("length"))
+			node.append_attribute("length");
+		node.attribute("length") = dataSize;
+		bool saved = SaveGroupFile(filePath, doc);
+		if (saved)
+			SetItemError(ucParam, 0);
+		cemuLog_log(LogType::Force, "UC write {} = \"{}\" (type {}, size {}) -> {}{}", name, valueText, (uint32)type, dataSize, _pathToUtf8(filePath), saved ? "" : " FAILED");
+	}
+}
+
+void coreinitExport_UCReadSysConfig(PPCInterpreter_t* hCPU)
+{
+	// r3 = UC handle, r4 = number of items, r5 = UCParamStruct_t*
+	UCParamStruct_t* ucParamBase = (UCParamStruct_t*)memory_getPointerFromVirtualOffset(hCPU->gpr[5]);
+	uint32 ucParamCount = hCPU->gpr[4];
+	for (uint32 i = 0; i < ucParamCount; i++)
+		uc::ReadItem(ucParamBase + i);
 	osLib_returnFromFunction(hCPU, 0); // 0 -> success
+}
+
+void coreinitExport_UCWriteSysConfig(PPCInterpreter_t* hCPU)
+{
+	// r3 = UC handle, r4 = number of items, r5 = UCParamStruct_t*
+	UCParamStruct_t* ucParamBase = (UCParamStruct_t*)memory_getPointerFromVirtualOffset(hCPU->gpr[5]);
+	uint32 ucParamCount = hCPU->gpr[4];
+	for (uint32 i = 0; i < ucParamCount; i++)
+		uc::WriteItem(ucParamBase + i);
+	osLib_returnFromFunction(hCPU, 0); // 0 -> success
+}
+
+void coreinitExport_UCOpen(PPCInterpreter_t* hCPU)
+{
+	static std::atomic<sint32> s_ucHandle = 0;
+	sint32 handle = ++s_ucHandle;
+	cemuLog_logDebug(LogType::Force, "UCOpen() -> {}", handle);
+	osLib_returnFromFunction(hCPU, handle);
+}
+
+void coreinitExport_UCClose(PPCInterpreter_t* hCPU)
+{
+	osLib_returnFromFunction(hCPU, 0);
 }
