@@ -320,8 +320,23 @@ void WindowSystem::NotifyGameLoaded()
 	std::shared_lock lock(g_mutex);
 	if (g_mainFrame)
 	{
-		g_mainFrame->OnGameLoaded();
-		g_mainFrame->UpdateSettingsAfterGameLaunch();
+		// GTK/wx widgets may only be touched from the UI thread. A title switch (e.g. launching an
+		// applet from the Wii U Menu) starts the next title from the launcher thread, so defer to the UI thread
+		if (wxIsMainThread())
+		{
+			g_mainFrame->OnGameLoaded();
+			g_mainFrame->UpdateSettingsAfterGameLaunch();
+		}
+		else
+		{
+			g_mainFrame->CallAfter([]() {
+				std::shared_lock lock(g_mutex);
+				if (!g_mainFrame)
+					return;
+				g_mainFrame->OnGameLoaded();
+				g_mainFrame->UpdateSettingsAfterGameLaunch();
+			});
+		}
 	}
 }
 
@@ -329,7 +344,18 @@ void WindowSystem::NotifyGameExited()
 {
 	std::shared_lock lock(g_mutex);
 	if (g_mainFrame)
-		g_mainFrame->RestoreSettingsAfterGameExited();
+	{
+		if (wxIsMainThread())
+			g_mainFrame->RestoreSettingsAfterGameExited();
+		else
+		{
+			g_mainFrame->CallAfter([]() {
+				std::shared_lock lock(g_mutex);
+				if (g_mainFrame)
+					g_mainFrame->RestoreSettingsAfterGameExited();
+			});
+		}
+	}
 }
 
 void WindowSystem::RefreshGameList()
