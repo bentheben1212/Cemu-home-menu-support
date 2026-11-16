@@ -269,6 +269,39 @@ namespace coreinit
 		DebugLogStackTrace(coreinit::OSGetCurrentThread(), coreinit::OSGetStackPointer());
 		coreinit::__OSDumpRecentConsoleOutput(); // asserts usually print their reason via OSReport before panicking
 		PPCInterpreter_dumpRecentHLECallsForStack(PPCInterpreter_getCurrentInstance()->gpr[1], 48); // only recorded while an HLE trace is active
+		{
+			// dump registers and the code around the first return addresses, so the condition that led to the panic
+			// can be read from the log (disassemble the words as big endian PPC)
+			PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
+			for (sint32 r = 0; r < 32; r += 8)
+				cemuLog_log(LogType::Force, "r{:<2}: {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {:08x}", r,
+					hCPU->gpr[r + 0], hCPU->gpr[r + 1], hCPU->gpr[r + 2], hCPU->gpr[r + 3], hCPU->gpr[r + 4], hCPU->gpr[r + 5], hCPU->gpr[r + 6], hCPU->gpr[r + 7]);
+			auto dumpCode = [](uint32 addr) {
+				uint32 start = (addr - 0xC0) & ~3;
+				uint32 end = addr + 0x20;
+				if (!memory_isAddressRangeAccessible(start, end - start))
+					return;
+				cemuLog_log(LogType::Force, "Code around 0x{:08x}:", addr);
+				for (uint32 a = start; a < end; a += 0x20)
+				{
+					std::string line = fmt::format("  {:08x}:", a);
+					for (uint32 i = 0; i < 0x20; i += 4)
+						line.append(fmt::format(" {:08x}", memory_readU32(a + i)));
+					cemuLog_log(LogType::Force, "{}", line);
+				}
+			};
+			dumpCode(hCPU->spr.LR);
+			uint32 sp = hCPU->gpr[1];
+			for (sint32 frame = 0; frame < 6; frame++)
+			{
+				if (sp == 0 || !memory_isAddressRangeAccessible(sp, 8))
+					break;
+				sp = memory_readU32(sp); // back chain
+				if (sp == 0 || !memory_isAddressRangeAccessible(sp, 8))
+					break;
+				dumpCode(memory_readU32(sp + 4));
+			}
+		}
 #ifdef CEMU_DEBUG_ASSERT
 		while (true) std::this_thread::sleep_for(std::chrono::milliseconds(100));
 #endif
