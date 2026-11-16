@@ -244,6 +244,25 @@ namespace GX2
 		return true;
 	}
 
+	// Variants used by system applets (e.g. Friend List, Browser, Notifications) to draw the previous title's last
+	// frame behind them. Assumed to have the same signature as GX2GetLastFrame. Previously unsupported, which left
+	// the caller's GX2Texture uninitialized (garbage pointers -> intermittent crashes in the applet and texture decoder)
+	bool _GX2GetLastFrameA(uint32 deviceId, GX2Texture* textureOut)
+	{
+		cemuLog_logOnce(LogType::Force, "_GX2GetLastFrameA(device {}, texture 0x{:08x})", deviceId, MEMPTR<GX2Texture>(textureOut).GetMPTR());
+		if (!textureOut)
+			return false;
+		return GX2GetLastFrame(deviceId, textureOut);
+	}
+
+	bool _GX2GetLastFrameB(uint32 deviceId, GX2Texture* textureOut)
+	{
+		cemuLog_logOnce(LogType::Force, "_GX2GetLastFrameB(device {}, texture 0x{:08x})", deviceId, MEMPTR<GX2Texture>(textureOut).GetMPTR());
+		if (!textureOut)
+			return false;
+		return GX2GetLastFrame(deviceId, textureOut);
+	}
+
 	bool GX2GetLastFrameGammaA(uint32 deviceId, float32be* gamma)
 	{
 		*gamma = 1.0f;
@@ -339,6 +358,8 @@ namespace GX2
 		cafeExportRegister("gx2", GX2SetDRCGamma, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2GetLastFrame, LogType::GX2);
+		cafeExportRegister("gx2", _GX2GetLastFrameA, LogType::GX2);
+		cafeExportRegister("gx2", _GX2GetLastFrameB, LogType::GX2);
 		cafeExportRegister("gx2", GX2GetLastFrameGammaA, LogType::GX2);
 		cafeExportRegister("gx2", GX2GetLastFrameGammaB, LogType::GX2);
 
