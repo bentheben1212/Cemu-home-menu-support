@@ -32,6 +32,7 @@ namespace nsysnet
 #define NSSL_OK (0)
 #define NSSL_INVALID_CTX (0xFFD7FFFF)
 #define NSSL_INVALID_SIZE (-0x280017)
+#define NSSL_INVALID_CERT_ID (-0x280003) // assumed value (NSSL error range starts at -0x280001)
 
 	struct NSSLInternalState_t
 	{

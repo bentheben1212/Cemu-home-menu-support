@@ -292,6 +292,22 @@ namespace nn
 			return OLV_RESULT_SUCCESS;
 		}
 
+		// hidden::InitializeSystem: used by the Wii U Menu (and other system titles) instead of Initialize.
+		// The menu only launches Miiverse when the olv library reports itself initialized (IsInitialized).
+		// Miiverse servers are gone, so initialize in offline mode without any network request.
+		// Miiverse itself initializes separately (InitializePortalApp) after it is launched
+		sint32 InitializeSystem(nn::olv::InitializeParam* pParam)
+		{
+			if (g_IsInitialized)
+				return OLV_RESULT_ALREADY_INITIALIZED;
+			if (!pParam || !pParam->m_Work)
+				return OLV_RESULT_INVALID_PTR;
+			g_IsInitialized = true;
+			g_IsOnlineMode = false;
+			cemuLog_log(LogType::Force, "nn_olv: InitializeSystem (flags 0x{:x}) -> success (offline)", (uint32)pParam->m_Flags);
+			return OLV_RESULT_SUCCESS;
+		}
+
 		namespace Report
 		{
 			uint32 GetReportTypes()
@@ -310,4 +326,4 @@ namespace nn
 			return g_IsInitialized;
 		}
 	}
-}
+}

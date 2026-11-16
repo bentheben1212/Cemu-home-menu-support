@@ -2176,7 +2176,11 @@ namespace nsysnet
 		uint8* certificateData = iosuCrypto_getCertificateDataById(serverCertId, &certificateSize);
 		if (certificateData == nullptr)
 		{
-			cemu_assert_debug(false);
+			cemuLog_log(LogType::Force, "NSSLExportInternalServerCertificate: certificate {} is not available", serverCertId);
+			if (outputSize)
+				*outputSize = 0;
+			osLib_returnFromFunction(hCPU, NSSL_INVALID_CERT_ID);
+			return;
 		}
 
 		if( output )
@@ -2202,7 +2206,15 @@ namespace nsysnet
 		uint8* certificateData = iosuCrypto_getCertificateDataById(serverCertId, &certificateSize);
 		if (certificateData == nullptr)
 		{
-			assert_dbg(); // todo
+			// client certificates (ccerts) need the console's otp.bin to decrypt their private keys. Without them
+			// fail like a missing certificate, so the title reports a network error instead of crashing Cemu
+			cemuLog_log(LogType::Force, "NSSLExportInternalClientCertificate: client certificate {} is not available (requires otp.bin and ccerts)", serverCertId);
+			if (outputSize)
+				*outputSize = 0;
+			if (pkeyOutputSize)
+				*pkeyOutputSize = 0;
+			osLib_returnFromFunction(hCPU, NSSL_INVALID_CERT_ID);
+			return;
 		}
 		if (output)
 			memcpy(output, certificateData, certificateSize);
@@ -2212,9 +2224,13 @@ namespace nsysnet
 		// private key
 		sint32 pkeySize = 0;
 		uint8* pkeyData = iosuCrypto_getCertificatePrivateKeyById(serverCertId, &pkeySize);
-		if (pkeyData == nullptr)
+		if (pkeyData == nullptr || pkeySize == 0)
 		{
-			assert_dbg(); // todo
+			cemuLog_log(LogType::Force, "NSSLExportInternalClientCertificate: private key of client certificate {} is not available", serverCertId);
+			if (pkeyOutputSize)
+				*pkeyOutputSize = 0;
+			osLib_returnFromFunction(hCPU, NSSL_INVALID_CERT_ID);
+			return;
 		}
 		if (pkeyOutput)
 			memcpy(pkeyOutput, pkeyData, pkeySize);
