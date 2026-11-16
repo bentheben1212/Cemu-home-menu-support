@@ -45,6 +45,7 @@ jobs:
 
     # vcpkg's files cache is keyed by each package's ABI hash, so restoring an older cache is always safe
     - name: Restore vcpkg binary cache
+      id: vcpkg-cache
       uses: actions/cache@v4
       with:
         path: .vcpkg-cache
@@ -53,12 +54,19 @@ jobs:
           vcpkg-linux-x64-
 
     - name: Restore ccache
+      id: ccache-cache
       uses: actions/cache@v4
       with:
         path: .ccache
         key: ccache-linux-x64-${{ github.run_id }}
         restore-keys: |
           ccache-linux-x64-
+
+    - name: Report cache state
+      run: |
+        echo "vcpkg cache: exact hit=${{ steps.vcpkg-cache.outputs.cache-hit }}, restored key=${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
+        echo "ccache:      exact hit=${{ steps.ccache-cache.outputs.cache-hit }}, restored key=${{ steps.ccache-cache.outputs.cache-matched-key }}"
+        du -sh .vcpkg-cache .ccache 2>/dev/null || echo "(no cache directories restored)"
 
     - name: Bootstrap vcpkg
       run: bash ./dependencies/vcpkg/bootstrap-vcpkg.sh -disableMetrics
