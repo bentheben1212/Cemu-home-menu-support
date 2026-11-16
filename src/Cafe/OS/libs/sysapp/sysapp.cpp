@@ -730,7 +730,35 @@ namespace sysapp
 		coreinit::__OSClearCopyData();
 		_SYSAppendCallerInfo();
 		coreinit::__OSQueueTitleSwitch(mainAppTitleId);
+		// apps like Download Management call _Exit() themselves right after this. Others (e.g. the Internet Browser)
+		// wait for the system to send ReleaseForeground + Exit through ProcUI and then return from main
+		coreinit::__OSRequestProcessExit();
 		return 0;
+	}
+
+	// launches the Notifications system application (system application index 7). Arguments are unknown and ignored
+	void export__SYSLaunchNotificationsDirect(PPCInterpreter_t* hCPU)
+	{
+		cemuLog_log(LogType::Force, "_SYSLaunchNotificationsDirect(r3=0x{:08x}, r4=0x{:08x}) (LR 0x{:08x})", hCPU->gpr[3], hCPU->gpr[4], hCPU->spr.LR);
+		coreinit::__OSClearCopyData();
+		uint32 r = _SYSSwitchToTitle("_SYSLaunchNotificationsDirect", _SYSGetSystemApplicationTitleId(7));
+		osLib_returnFromFunction(hCPU, r);
+	}
+
+	// title that launched the current one, recorded on each title switch
+	uint64 SYSGetCallerTitleId()
+	{
+		uint64 callerTitleId = coreinit::__OSGetCallerTitleId();
+		cemuLog_log(LogType::Force, "SYSGetCallerTitleId() -> {:016x}", callerTitleId);
+		return callerTitleId;
+	}
+
+	sint32 SYSGetCallerUPID()
+	{
+		uint64 callerTitleId = coreinit::__OSGetCallerTitleId();
+		sint32 upid = callerTitleId ? _SYSGetUPIDFromTitleId(callerTitleId) : -1;
+		cemuLog_log(LogType::Force, "SYSGetCallerUPID() -> {} (caller {:016x})", upid, callerTitleId);
+		return upid;
 	}
 
 	uint32 SYSRelaunchTitle(uint32 argc, MEMPTR<char>* argv)
@@ -770,6 +798,9 @@ namespace sysapp
 		cafeExportRegister("sysapp", SYSLaunchMenu, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToMainApp, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchTo, LogType::Placeholder);
+		osLib_addFunction("sysapp", "_SYSLaunchNotificationsDirect", export__SYSLaunchNotificationsDirect);
+		cafeExportRegister("sysapp", SYSGetCallerTitleId, LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSGetCallerUPID, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchTo, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSDirectlySwitchTo, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSLaunchTitle, LogType::Placeholder);

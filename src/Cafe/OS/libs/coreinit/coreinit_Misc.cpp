@@ -713,6 +713,7 @@ namespace coreinit
 	// _SYSSwitchToMainApp. Cemu runs only one process, so the applet replaces the main app and we remember the
 	// caller here (host memory, survives title switches) to switch back to it later
 	static uint64 s_mainAppTitleId = 0;
+	static uint64 s_callerTitleId = 0; // title that launched the current one (0 if started directly)
 	static bool s_startedViaTitleSwitch = false;
 	static std::atomic<uint64> s_queuedTitleSwitch = 0;
 
@@ -726,6 +727,11 @@ namespace coreinit
 		return s_mainAppTitleId;
 	}
 
+	uint64 __OSGetCallerTitleId()
+	{
+		return s_callerTitleId;
+	}
+
 	void __OSQueueTitleSwitch(uint64 titleId)
 	{
 		s_queuedTitleSwitch.store(titleId);
@@ -736,6 +742,7 @@ namespace coreinit
 		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
 		if (!_IsAppletTitle(currentTitleId))
 			s_mainAppTitleId = currentTitleId; // leaving a main app: it becomes the caller of whatever we launch
+		s_callerTitleId = currentTitleId;
 		s_startedViaTitleSwitch = true;
 		s_queuedTitleSwitch.store(0);
 		cemuLog_log(LogType::Force, "Title switch: {:016x} -> {:016x} (main app {:016x})", currentTitleId, titleId, s_mainAppTitleId);
@@ -849,13 +856,54 @@ namespace coreinit
 		return 0;
 	}
 
-	void OSReleaseForeground()
-	{
-		cemuLog_logDebug(LogType::Force, "OSReleaseForeground not implemented");
-	}
-
 	bool s_transitionToBackground = false;
 	bool s_transitionToForeground = false;
+
+	// Process exit requested by the system side (e.g. after _SYSSwitchToMainApp):
+	// 1) send ReleaseForeground with the shutdown flag set
+	// 2) once the app has released the foreground (OSReleaseForeground via ProcUI, or OSSavesDone_ReadyToRelease) send Exit
+	// The app then returns from main / calls exit() which performs any queued title switch
+	static std::atomic<bool> s_exitRequested = false;
+	static std::atomic<bool> s_releaseForShutdownPending = false;
+	static std::atomic<bool> s_exitMessagePending = false;
+
+	void __OSRequestProcessExit()
+	{
+		cemuLog_log(LogType::Force, "System: requesting process exit (ReleaseForeground -> Exit)");
+		s_exitRequested = true;
+		s_releaseForShutdownPending = true;
+	}
+
+	static bool _SendSystemMessage(SysMessageId id, uint32 data1)
+	{
+		OSMessage msg{};
+		msg.data0 = stdx::to_underlying(id);
+		msg.data1 = data1;
+		return OSSendMessage(coreinit::OSGetSystemMessageQueue(), &msg, 0);
+	}
+
+	// called once the app is done with its foreground release
+	static void _OnForegroundReleased(const char* source)
+	{
+		if (!s_exitRequested.exchange(false)) // send Exit only once even if both release paths fire
+			return;
+		cemuLog_log(LogType::Force, "System: {} after exit request, sending Exit message", source);
+		s_releaseForShutdownPending = false;
+		if (!_SendSystemMessage(SysMessageId::MsgExit, 0))
+			s_exitMessagePending = true; // queue full, retry in UpdateSystemMessageQueue
+	}
+
+	void OSReleaseForeground()
+	{
+		cemuLog_logDebug(LogType::Force, "OSReleaseForeground");
+		_OnForegroundReleased("OSReleaseForeground");
+	}
+
+	void OSSavesDone_ReadyToRelease()
+	{
+		cemuLog_log(LogType::Force, "OSSavesDone_ReadyToRelease()");
+		_OnForegroundReleased("OSSavesDone_ReadyToRelease");
+	}
 
 	void StartBackgroundForegroundTransition()
 	{
@@ -871,6 +919,18 @@ namespace coreinit
 		cemu_assert_debug(!__OSHasSchedulerLock());
 		// normally syscall 0x2E is used to get the next message
 		// for now we just have some preliminary logic here to allow a fake transition to background & foreground
+		if (s_exitMessagePending)
+		{
+			if (_SendSystemMessage(SysMessageId::MsgExit, 0))
+				s_exitMessagePending = false;
+			return;
+		}
+		if (s_releaseForShutdownPending)
+		{
+			if (_SendSystemMessage(SysMessageId::MsgReleaseForeground, 1)) // 1 -> system is shutting down
+				s_releaseForShutdownPending = false;
+			return;
+		}
 		if(s_transitionToBackground)
 		{
 			// add transition to background message
@@ -960,13 +1020,19 @@ namespace coreinit
 		s_currentTitleId = CafeSystem::GetForegroundTitleId();
 		// title started directly (game list, command line) rather than by a guest title switch: reset caller tracking
 		if (!s_startedViaTitleSwitch)
+		{
 			s_mainAppTitleId = _IsAppletTitle(s_currentTitleId) ? 0 : s_currentTitleId;
+			s_callerTitleId = 0;
+		}
 		s_startedViaTitleSwitch = false;
 		s_queuedTitleSwitch.store(0);
 		s_sdkVersion = CafeSystem::GetForegroundTitleSDKVersion();
 		s_forwardConsoleLogs = LaunchSettings::ForwardConsoleLogging();
 		s_transitionToBackground = false;
 		s_transitionToForeground = false;
+		s_exitRequested = false;
+		s_releaseForShutdownPending = false;
+		s_exitMessagePending = false;
 
 		cafeExportRegister("coreinit", __os_snprintf, LogType::Placeholder);
 
@@ -994,6 +1060,7 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSGetShutdownFlags, LogType::Placeholder);
 
 		cafeExportRegister("coreinit", OSReleaseForeground, LogType::Placeholder);
+		cafeExportRegister("coreinit", OSSavesDone_ReadyToRelease, LogType::Placeholder);
 
 		cafeExportRegister("coreinit", OSDriver_Register, LogType::Placeholder);
 		cafeExportRegister("coreinit", OSDriver_Deregister, LogType::Placeholder);
