@@ -102,6 +102,11 @@ MPTR RPLLoader_AllocateCodeSpace(uint32 size, uint32 alignment)
 	return codeAddr;
 }
 
+void RPLLoader_FreeCodeSpace(MPTR codeAddr)
+{
+	rplLoaderHeap_codeArea2.free(memory_getPointerFromVirtualOffset(codeAddr));
+}
+
 uint32 RPLLoader_AllocateDataSpace(RPLModule* rpl, uint32 size, uint32 alignment)
 {
 	if (rplLoader_applicationHasMemoryControl)

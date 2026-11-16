@@ -10,6 +10,7 @@ void RPLLoader_UnloadAll();
 uint8* RPLLoader_AllocateTrampolineCodeSpace(sint32 size);
 
 MPTR RPLLoader_AllocateCodeSpace(uint32 size, uint32 alignment);
+void RPLLoader_FreeCodeSpace(MPTR codeAddr);
 
 uint32 RPLLoader_GetMaxCodeOffset();
 uint32 RPLLoader_GetDataAllocatorAddr();

@@ -139,6 +139,16 @@ namespace coreinit
 	void InitializeCodeGen()
 	{
 		_avoidCodeGenJIT = false;
+		// The codegen (JIT) range is allocated from the RPL loader's code area, which starts over for every title.
+		// Forget a range left over from a previous title, otherwise a title launched after another JIT user
+		// (e.g. eShop after Miiverse or Internet Browser) gets a range that overlaps its own modules
+		if (coreinitCodeGen.rangeIsAllocated)
+		{
+			cemuLog_log(LogType::Force, "CodeGen: releasing codegen range 0x{:08x} (size 0x{:x}) of the previous title", coreinitCodeGen.rangeStart, coreinitCodeGen.rangeSize);
+			RPLLoader_FreeCodeSpace(coreinitCodeGen.rangeStart);
+		}
+		delete[] coreinitCodeGen.cacheStateCopy;
+		coreinitCodeGen = {};
 		cafeExportRegister("coreinit", OSGetCodegenVirtAddrRange, LogType::Placeholder);
 		cafeExportRegister("coreinit", ICInvalidateRange, LogType::Placeholder);
 
