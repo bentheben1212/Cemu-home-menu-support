@@ -628,6 +628,23 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	if (texDecoder == nullptr)
 		return;
 
+	// make sure the source data is in mapped guest memory, otherwise decoding segfaults the GPU thread
+	{
+		uint32 srcAddr = (mipIndex == 0) ? textureLoader.physAddress : (textureLoader.physMipAddress + textureLoader.levelOffset);
+		uint32 srcSize = (uint32)std::max<sint32>(textureLoader.maxOffsetOutdated, 1);
+		if (!memory_isAddressRangeAccessible(memory_physicalToVirtual(srcAddr), srcSize))
+		{
+			static std::atomic<uint32> s_invalidTextureLogCount = 0;
+			if (s_invalidTextureLogCount++ < 32)
+			{
+				cemuLog_log(LogType::Force, "Texture source not in mapped memory, skipping upload: title {:016x} src 0x{:08x} size 0x{:x} (image 0x{:08x} mip 0x{:08x} mipLevel {} slice {}) fmt 0x{:04x} dim {} {}x{}x{} pitch {} tileMode {} swizzle 0x{:x} isDepth {}",
+							CafeSystem::GetForegroundTitleId(), srcAddr, srcSize, physImagePtr, physMipPtr, mipIndex, sliceIndex, (uint32)format, (uint32)dim,
+							width, height, depth, pitch, (uint32)tileMode, swizzle, tex->isDepth);
+			}
+			return;
+		}
+	}
+
 	textureLoader.decodedTexelCountX = texDecoder->getTexelCountX(&textureLoader);
 	textureLoader.decodedTexelCountY = texDecoder->getTexelCountY(&textureLoader);
 
