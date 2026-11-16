@@ -62,7 +62,13 @@ namespace MemMapper
 	void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
 	{
 		if (fromReservation)
+		{
+			// Discard the pages so they read back as zero on the next AllocateMemory, like decommitting
+			// does on Windows. Without this a title started after another one (e.g. an applet launched
+			// from the Wii U Menu) would see the previous title's leftover data in MEM2 and other ranges
+			madvise(baseAddr, size, MADV_DONTNEED);
 			mprotect(baseAddr, size, PROT_NONE);
+		}
 		else
 			munmap(baseAddr, size);
 	}

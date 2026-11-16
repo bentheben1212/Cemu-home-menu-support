@@ -25,6 +25,7 @@ MPTR coreinit_allocFromSysArea(uint32 size, uint32 alignment)
 	if (!r)
 		cemuLog_log(LogType::Force, "Ran out of system memory");
 	cemu_assert(r);
+	memset(r.GetPtr(), 0, size); // the system area persists across titles, never hand out a previous title's data
 	return r.GetMPTR();
 }
 
