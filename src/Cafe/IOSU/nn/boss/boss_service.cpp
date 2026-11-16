@@ -1277,6 +1277,15 @@ namespace iosu::boss
 			// open FAD database
 			TaskId taskId(directoryName.name2.c_str());
 			nnResult r = m_fadDb.Load(taskId, titleId, persistentId);
+			if (r == RESULT_STORAGE_NOTEXIST)
+			{
+				// fad.db is only created once SpotPass has downloaded data for this storage (never happens offline).
+				// Report an empty storage instead of an error, apps like Notifications treat the error as fatal
+				cemuLog_log(LogType::Force, "nn_boss: storage \"{}\" of {:016x} has no fad.db yet, returning empty data list", directoryName.name2.c_str(), titleId);
+				serviceCall.WriteResponse<uint32be>(0);
+				serviceCall.WriteResponse<uint8be>(1);
+				return RESULT_SUCCESS;
+			}
 			if (NN_RESULT_IS_FAILURE(r))
 				return r;
 			m_fadDb.GetDataList(dataListTmp);
