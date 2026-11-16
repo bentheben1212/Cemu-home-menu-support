@@ -219,6 +219,10 @@ namespace GX2
 	bool GX2GetLastFrame(uint32 deviceId, GX2Texture* textureOut)
 	{
 		// return a 480p image
+		// clear the whole texture first: fields not set below (numLevels, mipPtr, mipSize, swizzle, mipOffset) would
+		// otherwise keep the caller's uninitialized values, e.g. 10 mip levels with a garbage mip pointer
+		memset(textureOut, 0, sizeof(GX2Texture));
+		textureOut->surface.numLevels = 1;
 		textureOut->viewFirstMip = 0;
 		textureOut->viewFirstSlice = 0;
 		textureOut->viewNumMips = 1;
