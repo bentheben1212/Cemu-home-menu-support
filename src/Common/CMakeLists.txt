@@ -55,8 +55,12 @@ if(LINUX)
 	)
 endif()
 
-# CemuCommon always builts the precompiled header
-target_precompile_headers(CemuCommon PRIVATE precompiled.h)
+# CemuCommon always builts the precompiled header (unless CEMU_NO_PRECOMPILED_HEADERS, see src/CMakeLists.txt)
+if(CEMU_NO_PRECOMPILED_HEADERS AND NOT MSVC)
+	target_compile_options(CemuCommon PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.h>")
+else()
+	target_precompile_headers(CemuCommon PRIVATE precompiled.h)
+endif()
 target_include_directories(CemuCommon PUBLIC "../")
 
 target_link_libraries(CemuCommon PRIVATE
