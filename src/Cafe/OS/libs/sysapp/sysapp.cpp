@@ -542,6 +542,17 @@ struct SysLauncherArgs28
 
 static_assert(sizeof(SysLauncherArgs28) == 0x28);
 
+// Notifications (system application index 7) reads its launch arguments with this.
+// The full struct layout is unknown. Like the other _SYSGet*Args structs it starts with the standard
+// deserialize arguments (anchor/result buffers), so only that header is cleared
+uint32 _SYSGetNotificationsArgs(sysDeserializeStandardArguments_t* argsOut)
+{
+	cemuLog_log(LogType::Force, "_SYSGetNotificationsArgs(0x{:08x}) -> 0 (LR 0x{:08x})", MEMPTR<void>(argsOut).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR);
+	if (argsOut)
+		memset(argsOut, 0, sizeof(sysDeserializeStandardArguments_t));
+	return 0;
+}
+
 uint32 _SYSGetLauncherArgs(void* argsOut)
 {
 	uint32 sdkVersion = coreinit::__OSGetProcessSDKVersion();
@@ -837,6 +848,7 @@ namespace sysapp
 			osLib_addFunction("sysapp", "SYSGetStandardResult", sysappExport_SYSGetStandardResult);
 
 			cafeExportRegisterFunc(_SYSGetLauncherArgs, "sysapp", "_SYSGetLauncherArgs", LogType::Placeholder);
+			cafeExportRegisterFunc(_SYSGetNotificationsArgs, "sysapp", "_SYSGetNotificationsArgs", LogType::Placeholder);
 			cafeExportRegisterFunc(_SYSGetAccountArgs, "sysapp", "_SYSGetAccountArgs", LogType::Placeholder);
 
 			sysapp::load();

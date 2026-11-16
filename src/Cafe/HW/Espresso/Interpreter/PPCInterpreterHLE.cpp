@@ -32,6 +32,14 @@ void PPCInterpreter_handleUnsupportedHLECall(PPCInterpreter_t* hCPU)
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
+// forget which unsupported calls were already logged, so each title's log lists all unsupported calls it makes
+void PPCInterpreter_resetUnsupportedHLECallTracking()
+{
+	std::unique_lock _l(s_hleLogMutex);
+	s_unsupportedHLECalls.clear();
+	s_unsupportedHLECallCount.clear();
+}
+
 static constexpr size_t HLE_TABLE_CAPACITY = 0x4000;
 HLECALL s_ppcHleTable[HLE_TABLE_CAPACITY]{};
 sint32 s_ppcHleTableWriteIndex = 0;

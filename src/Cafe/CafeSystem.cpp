@@ -1091,6 +1091,7 @@ namespace CafeSystem
 		UnmountBaseDirectories();
 		DestroyMemorySpace();
 		LaunchSettings::ClearCosArgstr();
+		PPCInterpreter_resetUnsupportedHLECallTracking();
 		sSystemRunning = false;
 	}
 
