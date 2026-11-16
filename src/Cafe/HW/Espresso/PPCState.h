@@ -238,6 +238,10 @@ HLEIDX PPCInterpreter_registerHLECall(HLECALL hleCall, std::string hleName);
 HLECALL PPCInterpreter_getHLECall(HLEIDX funcIndex);
 void PPCInterpreter_handleUnsupportedHLECall(PPCInterpreter_t* hCPU);
 void PPCInterpreter_resetUnsupportedHLECallTracking();
+void PPCInterpreter_callHLE(PPCInterpreter_t* hCPU, HLEIDX funcIndex);
+bool PPCInterpreter_isHLETraceActive();
+void PPCInterpreter_traceHLECallUnsupported(PPCInterpreter_t* hCPU, const char* libFuncName);
+void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs);
 
 // HLE scheduler
 

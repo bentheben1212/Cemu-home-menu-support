@@ -68,6 +68,8 @@ namespace acp
 		s_lastLaunchCheckedTitleId.store(titleId);
 		cemuLog_log(LogType::Force, "ACPCheckTitleLaunchByTitleListType({:016x}, 0x{:08x}) -> {} (LR 0x{:08x})",
 					titleId, hCPU->gpr[4], launchable ? "launchable" : "not installed/invalid", hCPU->spr.LR);
+		// trace what the caller does next, so a launch that silently does nothing shows where it stops
+		PPCInterpreter_startHLETrace(fmt::format("after launch check of {:016x}", titleId), 3000);
 		osLib_returnFromFunction(hCPU, launchable ? (uint32)ACPStatus::SUCCESS : (uint32)ACP_RESULT_NOT_FOUND);
 	}
 

@@ -897,9 +897,7 @@ void* PPCRecompiler_virtualHLE(PPCInterpreter_t* ppcInterpreter, uint32 hleFuncI
 	}
 	else
 	{
-		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
-		cemu_assert(hleCall != nullptr);
-		hleCall(ppcInterpreter);
+		PPCInterpreter_callHLE(ppcInterpreter, hleFuncId);
 	}
 	ppcInterpreter->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();

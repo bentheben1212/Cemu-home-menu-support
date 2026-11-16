@@ -706,6 +706,22 @@ namespace sysapp
 		return _SYSSwitchToTitle("_SYSDirectlySwitchTo", _SYSResolvePFIDToTitleId(pfid));
 	}
 
+	// eShop is the applet with PFID 10. The menu calls this instead of SYSSwitchTo(10). args (SysEShopArgs) may be null
+	static constexpr sint32 SYS_PFID_ESHOP = 10;
+
+	uint32 SYSSwitchToEShop(void* args)
+	{
+		cemuLog_log(LogType::Force, "SYSSwitchToEShop(args 0x{:08x}) (LR 0x{:08x})", MEMPTR<void>(args).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR);
+		coreinit::__OSClearCopyData();
+		return _SYSSwitchToTitle("SYSSwitchToEShop", _SYSResolvePFIDToTitleId(SYS_PFID_ESHOP));
+	}
+
+	uint32 _SYSSwitchToEShop(void* args)
+	{
+		cemuLog_log(LogType::Force, "_SYSSwitchToEShop(args 0x{:08x}) (LR 0x{:08x})", MEMPTR<void>(args).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR);
+		return _SYSSwitchToTitle("_SYSSwitchToEShop", _SYSResolvePFIDToTitleId(SYS_PFID_ESHOP));
+	}
+
 	uint32 SYSLaunchTitle(uint64 titleId)
 	{
 		cemuLog_log(LogType::Force, "SYSLaunchTitle({:016x}) (LR 0x{:08x})", titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
@@ -842,6 +858,8 @@ namespace sysapp
 		cafeExportRegister("sysapp", _SYSLaunchTitleWithStdArgsInNoSplash, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSSwitchToEShop, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchToEShop, LogType::Placeholder);
 	}
 }
 
