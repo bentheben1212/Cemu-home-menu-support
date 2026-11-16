@@ -109,6 +109,7 @@ struct ParsedCosXml
   public:
 
 	std::string argstr;
+	uint32 codegenSize{0}; // <codegen_size>, size of the JIT code area. 0 if not specified
 
 	struct Permission
 	{

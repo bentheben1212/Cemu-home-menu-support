@@ -44,6 +44,7 @@ namespace CafeSystem
 	std::string GetForegroundTitleArgStr();
 	uint32 GetForegroundTitleOlvAccesskey();
 	CosCapabilityBits GetForegroundTitleCosCapabilities(CosCapabilityGroup group);
+	uint32 GetForegroundTitleCodegenSize(); // codegen_size from cos.xml, 0 if not specified
 	std::optional<sint32> GetForegroundTitleReturnStatus(); // valid once the foreground title exited gracefully via coreinit exit
 
 	void ShutdownTitle();

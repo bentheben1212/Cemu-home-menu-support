@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeSystem.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/OS/libs/coreinit/coreinit_CodeGen.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
@@ -27,11 +28,17 @@ namespace coreinit
 
 	void OSGetCodegenVirtAddrRange(betype<uint32>* rangeStart, betype<uint32>* rangeSize)
 	{
-		uint32 codegenSize = 0x01000000; // todo: Read from cos.xml
-		//debug_printf("OSGetCodegenVirtAddrRange(0x%08x,0x%08x)\n", hCPU->gpr[3], hCPU->gpr[4]);
 		// on first call, allocate range
 		if( coreinitCodeGen.rangeIsAllocated == false )
 		{
+			// the size comes from the title's cos.xml (codegen_size). WebKit based titles (eShop, Miiverse, Internet Browser)
+			// size their JIT heap from it. Fall back to 16MiB if the title doesn't specify it
+			uint32 codegenSize = CafeSystem::GetForegroundTitleCodegenSize();
+			uint32 cosCodegenSize = codegenSize;
+			if (codegenSize == 0)
+				codegenSize = 0x01000000;
+			codegenSize = (codegenSize + 0xFFF) & ~0xFFF;
+			cemuLog_log(LogType::Force, "CodeGen: allocating codegen range of 0x{:x} bytes (cos.xml codegen_size 0x{:x})", codegenSize, cosCodegenSize);
 			coreinitCodeGen.rangeStart = RPLLoader_AllocateCodeSpace(codegenSize, 0x1000);
 			coreinitCodeGen.rangeSize = codegenSize;
 			coreinitCodeGen.cacheStateCopy = new uint8[codegenSize];

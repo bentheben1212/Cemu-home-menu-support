@@ -31,13 +31,18 @@ bool PPCInterpreter_isHLETraceActive()
 	return true;
 }
 
-void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs)
+void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, sint32 maxLines)
 {
 	std::unique_lock _l(s_hleTraceMutex);
 	s_hleTraceNameCount.clear();
-	s_hleTraceLinesLeft = 300;
+	s_hleTraceLinesLeft = maxLines;
 	s_hleTraceDeadline = _HLETraceNowMs() + durationMs;
-	cemuLog_log(LogType::Force, "HLE trace: start ({}), logging OS library calls for {} ms", reason, durationMs);
+	cemuLog_log(LogType::Force, "HLE trace: start ({}), logging OS library calls for {} ms (max {} lines)", reason, durationMs, maxLines);
+}
+
+void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs)
+{
+	PPCInterpreter_startHLETraceEx(reason, durationMs, 300);
 }
 
 // skip high frequency calls that say nothing about what the title decides

@@ -813,6 +813,10 @@ ParsedCosXml* ParsedCosXml::Parse(uint8* xmlData, size_t xmlLen)
 	if (node)
 		parsedCos->argstr = node.text().as_string();
 
+	node = root.child("codegen_size");
+	if (node)
+		parsedCos->codegenSize = (uint32)std::strtoul(node.text().as_string(), nullptr, 16); // hexBinary
+
 	// parse permissions
 	auto permissionsNode = root.child("permissions");
 	for(uint32 permissionIndex = 0; permissionIndex < 19; ++permissionIndex)

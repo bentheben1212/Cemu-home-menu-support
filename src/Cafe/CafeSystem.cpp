@@ -15,6 +15,7 @@
 #include "Common/cpu_features.h"
 #include "input/InputManager.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
@@ -425,6 +426,13 @@ void cemu_initForGame()
 	IAudioInputAPI::PrintLogging();
 	// everything initialized
 	cemuLog_log(LogType::Force, "------- Run title -------");
+	// an applet launched by another title (e.g. from the Wii U Menu): trace its startup, so a panic or a silent
+	// failure while it initializes shows which OS calls led to it
+	if (coreinit::__OSGetCallerTitleId() != 0)
+	{
+		extern void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, sint32 maxLines);
+		PPCInterpreter_startHLETraceEx("applet startup", 8000, 800);
+	}
 	// wait till GPU thread is initialized
 	while (g_isGPUInitFinished == false) std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	// run coreinit rpl_entry
@@ -988,6 +996,17 @@ namespace CafeSystem
 		if (update.IsValid())
 			return update.GetArgStr();
 		return sGameInfo_ForegroundTitle.GetBase().GetArgStr();
+	}
+
+	uint32 GetForegroundTitleCodegenSize()
+	{
+		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		if (update.IsValid() && update.GetCosInfo())
+			return update.GetCosInfo()->codegenSize;
+		auto& base = sGameInfo_ForegroundTitle.GetBase();
+		if (base.IsValid() && base.GetCosInfo())
+			return base.GetCosInfo()->codegenSize;
+		return 0;
 	}
 
 	CosCapabilityBits GetForegroundTitleCosCapabilities(CosCapabilityGroup group)
