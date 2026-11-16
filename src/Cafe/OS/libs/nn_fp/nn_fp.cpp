@@ -119,6 +119,8 @@ namespace nn
 				InitSubmissionBuffer();
 				// note: While generally, Ioctlv() usage has the order as input (app->IOSU) followed by output (IOSU->app), FP uses it the other way around
 				nnResult r = coreinit::IOS_Ioctlv(g_fp.fpdHandle, (uint32)m_requestId.value(), m_numVecOut, m_numVecIn, m_vec);
+				if (NN_RESULT_IS_FAILURE(r))
+					cemuLog_log(LogType::Force, "nn_fp: request 0x{:04x} failed: 0x{:08x}", (uint32)m_requestId.value(), (uint32)r);
 				CopyBackOutputs();
 				owner.reset();
 				return r;
@@ -181,6 +183,8 @@ namespace nn
 				ppcDefineParamU32(result, 0);
 				ppcDefineParamPtr(ipcCtx, FPIpcContext, 1);
 				ipcCtx->m_asyncResult = result; // store result in variable since FP callbacks pass a pointer to nnResult and not the value directly
+				if (NN_RESULT_IS_FAILURE(result))
+					cemuLog_log(LogType::Force, "nn_fp: async request 0x{:04x} failed: 0x{:08x}", (uint32)ipcCtx->m_requestId.value(), (uint32)result);
 				ipcCtx->CopyBackOutputs();
 				PPCCoreCallback(ipcCtx->m_callbackFunc, &ipcCtx->m_asyncResult, ipcCtx->m_callbackParam);
 				delete ipcCtx;
@@ -367,6 +371,39 @@ namespace nn
 			ipcCtx->AddOutput(&resultBuf, sizeof(uint32be));
 			ipcCtx->Submit(std::move(ipcCtx));
 			return resultBuf != 0 ? 1 : 0;
+		}
+
+		// offline: no profile data available
+		nnResult GetMyProfile(iosu::fpd::Profile* profile)
+		{
+			if (profile)
+				memset(profile, 0, sizeof(iosu::fpd::Profile));
+			return 0;
+		}
+
+		// offline: no blocked users
+		nnResult GetBlackList(uint32be* pidList, uint32be* returnedCount, uint32 startIndex, uint32 maxCount)
+		{
+			if (returnedCount)
+				*returnedCount = 0;
+			return 0;
+		}
+
+		// converts a failed result into the code shown by the error viewer
+		// the nn::Result class argument is passed "by value" as a pointer to a copy
+		uint32 ResultToErrorCode(betype<nnResult>* resultPtr)
+		{
+			nnResult result = resultPtr ? (nnResult)*resultPtr : 0;
+			uint32 errorCode = 0;
+			if (NN_RESULT_IS_FAILURE(result))
+			{
+				if (nn::nnResult_GetModule(result) == NN_RESULT_MODULE_NN_ACT)
+					errorCode = (uint32)nn::NNResultToErrorCode(result, NN_RESULT_MODULE_NN_ACT); // 102-xxxx
+				else
+					errorCode = std::min<uint32>(nn::nnResult_GetDescription(result) >> 7, 9999); // viewer prefix for other modules unknown
+			}
+			cemuLog_log(LogType::Force, "nn_fp.ResultToErrorCode(0x{:08x}) -> {} (LR 0x{:08x})", (uint32)result, errorCode, PPCInterpreter_getCurrentInstance()->spr.LR);
+			return errorCode;
 		}
 
 		nnResult GetFriendList(uint32be* pidList, uint32be* returnedCount, uint32 startIndex, uint32 maxCount)
@@ -802,6 +839,9 @@ namespace nn
 				cafeExportRegisterFunc(HasLoggedIn, "nn_fp", "HasLoggedIn__Q2_2nn2fpFv", LogType::NN_FP);
 				cafeExportRegisterFunc(IsOnline, "nn_fp", "IsOnline__Q2_2nn2fpFv", LogType::NN_FP);
 				cafeExportRegisterFunc(GetFriendList, "nn_fp", "GetFriendList__Q2_2nn2fpFPUiT1UiT3", LogType::NN_FP);
+				cafeExportRegisterFunc(GetMyProfile, "nn_fp", "GetMyProfile__Q2_2nn2fpFPQ3_2nn2fp7Profile", LogType::NN_FP);
+				cafeExportRegisterFunc(GetBlackList, "nn_fp", "GetBlackList__Q2_2nn2fpFPUiT1UiT3", LogType::NN_FP);
+				cafeExportRegisterFunc(ResultToErrorCode, "nn_fp", "ResultToErrorCode__Q2_2nn2fpFQ2_2nn6Result", LogType::NN_FP);
 				cafeExportRegisterFunc(GetFriendRequestList, "nn_fp", "GetFriendRequestList__Q2_2nn2fpFPUiT1UiT3", LogType::NN_FP);
 				cafeExportRegisterFunc(GetFriendListAll, "nn_fp", "GetFriendListAll__Q2_2nn2fpFPUiT1UiT3", LogType::NN_FP);
 				cafeExportRegisterFunc(GetFriendListEx, "nn_fp", "GetFriendListEx__Q2_2nn2fpFPQ3_2nn2fp10FriendDataPCUiUi", LogType::NN_FP);

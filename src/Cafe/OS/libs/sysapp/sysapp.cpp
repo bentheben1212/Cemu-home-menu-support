@@ -747,6 +747,28 @@ namespace sysapp
 		return 0;
 	}
 
+	// fills the standard (anchor/result) arguments of the current title. No arguments are passed between titles yet
+	uint32 SYSGetStandardArgs(sysDeserializeStandardArguments_t* argsOut)
+	{
+		if (argsOut)
+			memset(argsOut, 0, sizeof(sysDeserializeStandardArguments_t));
+		return 0;
+	}
+
+	// Switches to the HOME Menu overlay. Cemu has no HOME Menu overlay: applets (e.g. Friend List after an error)
+	// use this to give control back, so return to the main app like _SYSSwitchToMainApp does
+	uint32 _SYSSwitchToHBMWithMode(uint32 mode)
+	{
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		cemuLog_log(LogType::Force, "_SYSSwitchToHBMWithMode({}) from {:016x} (LR 0x{:08x})", mode, currentTitleId, PPCInterpreter_getCurrentInstance()->spr.LR);
+		if (TitleIdParser(currentTitleId).GetType() != TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE)
+		{
+			cemuLog_log(LogType::Force, "_SYSSwitchToHBMWithMode: HOME Menu overlay not supported, ignored");
+			return 0;
+		}
+		return _SYSSwitchToMainApp();
+	}
+
 	// launches the Notifications system application (system application index 7). Arguments are unknown and ignored
 	void export__SYSLaunchNotificationsDirect(PPCInterpreter_t* hCPU)
 	{
@@ -808,6 +830,8 @@ namespace sysapp
 		cafeExportRegisterFunc(SYSRelaunchTitle, "sysapp", "SYSRelaunchTitle", LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSLaunchMenu, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToMainApp, LogType::Placeholder);
+		cafeExportRegister("sysapp", SYSGetStandardArgs, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchToHBMWithMode, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchTo, LogType::Placeholder);
 		osLib_addFunction("sysapp", "_SYSLaunchNotificationsDirect", export__SYSLaunchNotificationsDirect);
 		cafeExportRegister("sysapp", SYSGetCallerTitleId, LogType::Placeholder);
