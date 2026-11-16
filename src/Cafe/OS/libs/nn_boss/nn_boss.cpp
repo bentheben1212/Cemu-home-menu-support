@@ -494,6 +494,34 @@ namespace boss
 		s_VTable->rttiNetTaskSetting.ptr = nullptr; // todo
 	}
 
+	/* TaskResult */
+
+	// wraps an nn::Result returned by a boss task operation, apps use it to get a displayable error code
+	struct TaskResult
+	{
+		betype<BossResult> result;
+
+		static TaskResult* ctor(TaskResult* _this, BossResult result) // __ct__Q3_2nn4boss10TaskResultFQ2_2nn6Result
+		{
+			_this->result = result;
+			cemuLog_log(LogType::Force, "nn::boss::TaskResult(0x{:08x}) (LR 0x{:08x})", (uint32)result, PPCInterpreter_getCurrentInstance()->spr.LR);
+			return _this;
+		}
+
+		// The module-specific viewer prefix for boss errors is unknown, so only the description part is returned
+		// (shown as 000-xxxx). Success results map to 0
+		static uint32 ErrorCode(TaskResult* _this) // ErrorCode__Q3_2nn4boss10TaskResultCFv
+		{
+			BossResult r = _this->result;
+			uint32 errorCode = 0;
+			if (NN_RESULT_IS_FAILURE(r))
+				errorCode = std::min<uint32>(nn::nnResult_GetDescription(r) >> 7, 9999);
+			cemuLog_log(LogType::Force, "nn::boss::TaskResult::ErrorCode() result 0x{:08x} -> {}", (uint32)r, errorCode);
+			return errorCode;
+		}
+	};
+	static_assert(sizeof(TaskResult) == 4);
+
 	/* Task */
 
 	struct Task
@@ -596,14 +624,17 @@ namespace boss
 			nn_ac::IsApplicationConnected(&isConnected);
 			if (isForegroundRun && !isConnected)
 			{
-				cemuLog_logDebug(LogType::Force, "nn::boss::Task::Run: Application is not connected, returning error");
+				cemuLog_log(LogType::Force, "nn::boss::Task::Run(task \"{}\", foreground): application is not connected, returning 0xA0223A00", _thisptr->taskId.id.c_str());
 				return 0xA0223A00;
 			}
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskRun));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
 			serviceCall.WriteParam<uint8>(isForegroundRun ? 1 : 0);
-			return serviceCall.Submit();
+			BossResult r = serviceCall.Submit();
+			if (NN_RESULT_IS_FAILURE(r))
+				cemuLog_log(LogType::Force, "nn::boss::Task::Run(task \"{}\", foreground={}) failed: 0x{:08x}", _thisptr->taskId.id.c_str(), isForegroundRun, (uint32)r);
+			return r;
 		}
 
 		static BossResult StartScheduling(Task* _thisptr, uint8 executeImmediately)
@@ -1244,6 +1275,8 @@ namespace nn::boss
 			cafeExportRegisterFunc(nn::boss::Task::Initialize2, "nn_boss", "Initialize__Q3_2nn4boss4TaskFUcPCc", LogType::NN_BOSS);
 			cafeExportRegisterFunc(nn::boss::Task::Initialize3, "nn_boss", "Initialize__Q3_2nn4boss4TaskFPCc", LogType::NN_BOSS);
 			cafeExportRegisterFunc(nn::boss::Task::Run, "nn_boss", "Run__Q3_2nn4boss4TaskFb", LogType::NN_BOSS);
+			cafeExportRegisterFunc(nn::boss::TaskResult::ctor, "nn_boss", "__ct__Q3_2nn4boss10TaskResultFQ2_2nn6Result", LogType::NN_BOSS);
+			cafeExportRegisterFunc(nn::boss::TaskResult::ErrorCode, "nn_boss", "ErrorCode__Q3_2nn4boss10TaskResultCFv", LogType::NN_BOSS);
 			cafeExportRegisterFunc(nn::boss::Task::Wait, "nn_boss", "Wait__Q3_2nn4boss4TaskFUiQ3_2nn4boss13TaskWaitState", LogType::NN_BOSS);
 			cafeExportRegisterFunc(nn::boss::Task::GetTurnState, "nn_boss", "GetTurnState__Q3_2nn4boss4TaskCFPUi", LogType::NN_BOSS);
 			cafeExportRegisterFunc(nn::boss::Task::GetHttpStatusCode, "nn_boss", "GetHttpStatusCode__Q3_2nn4boss4TaskCFPUi", LogType::NN_BOSS);
