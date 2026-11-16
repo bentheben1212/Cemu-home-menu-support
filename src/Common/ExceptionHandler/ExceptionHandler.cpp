@@ -3,6 +3,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/HW/Espresso/PPCState.h"
+#include "Cafe/HW/MMU/MMU.h"
 #include "Cafe/HW/Espresso/Debugger/GDBStub.h"
 #include "ExceptionHandler.h"
 
@@ -78,6 +79,24 @@ void ExceptionHandler_LogGeneralInfo()
         uint32 threadPtr = memory_getVirtualOffsetFromPointer(coreinit::OSGetCurrentThread());
         sprintf(dumpLine, "IP 0x%08x LR 0x%08x Thread 0x%08x", hCPU->instructionPointer, hCPU->spr.LR, threadPtr);
         CrashLog_WriteLine(dumpLine);
+
+        // PPC instructions around the IP (to identify the faulting load/store and its base register)
+        {
+            uint32 ip = hCPU->instructionPointer & ~3u;
+            uint32 codeStart = ip - 0x20;
+            if (ip >= 0x20 && memory_isAddressRangeAccessible(codeStart, 0x34))
+            {
+                std::string codeLine = "Code:";
+                for (uint32 addr = codeStart; addr <= ip + 0x10; addr += 4)
+                {
+                    if (addr == ip)
+                        codeLine.append(fmt::format(" [{:08x}]", memory_readU32(addr)));
+                    else
+                        codeLine.append(fmt::format(" {:08x}", memory_readU32(addr)));
+                }
+                CrashLog_WriteLine(codeLine);
+            }
+        }
 
         // GPR info
         CrashLog_WriteLine("");

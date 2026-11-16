@@ -11,6 +11,8 @@
 
 #if BOOST_OS_LINUX
 #include "ELFSymbolTable.h"
+
+extern uint8* memory_base; // base of the emulated PowerPC address space
 #endif
 
 #if BOOST_OS_LINUX
@@ -100,6 +102,16 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 #endif
 
     CrashLog_WriteLine(fmt::format("Error: signal {}:", sig));
+	if ((sig == SIGSEGV || sig == SIGBUS) && info)
+	{
+		// translate the faulting host address to a guest address if it lies inside the emulated address space
+		uintptr_t faultAddr = (uintptr_t)info->si_addr;
+		uintptr_t guestBase = (uintptr_t)memory_base;
+		if (memory_base && faultAddr >= guestBase && faultAddr - guestBase < 0x100000000ULL)
+			CrashLog_WriteLine(fmt::format("Fault address: {} (guest address 0x{:08x})", info->si_addr, (uint32)(faultAddr - guestBase)));
+		else
+			CrashLog_WriteLine(fmt::format("Fault address: {} (outside guest memory)", info->si_addr));
+	}
 
 #if BOOST_OS_LINUX
 	char** symbol_trace = backtrace_symbols(backtraceArray, size);

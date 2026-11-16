@@ -495,6 +495,18 @@ static bool _UCReadSysConfigDefault(UCParamStruct_t* ucParam)
 		nn::act::GetSimpleAddressIdEx(&simpleAddress, nn::act::ACT_SLOT_CURRENT);
 
 		uint32 countryCode = nn::act::getCountryCodeFromSimpleAddress(simpleAddress);
+		if (countryCode == 0)
+		{
+			// account has no simple address (country) set. Apps like Friend List expect a valid country code,
+			// so use a default for the platform region (Wii U country codes: 1 = Japan, 49 = USA, 110 = United Kingdom)
+			CafeConsoleRegion region = CafeSystem::GetPlatformRegion();
+			if (region == CafeConsoleRegion::JPN)
+				countryCode = 1;
+			else if (region == CafeConsoleRegion::EUR)
+				countryCode = 110;
+			else
+				countryCode = 49;
+		}
 
 		if( ucParam->resultPtr != _swapEndianU32(MPTR_NULL) )
 			memory_writeU32(_swapEndianU32(ucParam->resultPtr), countryCode);
@@ -860,7 +872,8 @@ namespace uc
 	// these items are controlled by Cemu settings / Cemu's account system instead of the config files
 	static bool IsCemuManagedItem(const std::string& name)
 	{
-		return boost::iequals(name, "cafe.language") || boost::iequals(name, "cafe.cntry_reg") || boost::iequals(name, "s_acct01.uuid");
+		// cafe.cntry_reg is read from the config files first (if the menu saved one) and otherwise derived from the account/region
+		return boost::iequals(name, "cafe.language") || boost::iequals(name, "s_acct01.uuid");
 	}
 
 	static void SetItemError(UCParamStruct_t* ucParam, uint32 error)
