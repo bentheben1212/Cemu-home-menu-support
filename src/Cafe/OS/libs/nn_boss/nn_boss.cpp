@@ -28,6 +28,21 @@ namespace boss
 
 	IPCServiceClient s_ipcClient;
 
+#if defined(_MSC_VER)
+#define BOSS_FUNC_NAME __FUNCSIG__
+#else
+#define BOSS_FUNC_NAME __PRETTY_FUNCTION__
+#endif
+
+	// submits a boss service call and logs failures (release builds included) so failing SpotPass operations are visible
+	static BossResult _BossSubmit(IPCServiceClient::IPCServiceCall& serviceCall, const char* funcName)
+	{
+		BossResult r = serviceCall.Submit();
+		if (NN_RESULT_IS_FAILURE(r))
+			cemuLog_log(LogType::Force, "nn_boss: {} failed: 0x{:08x}", funcName, (uint32)r);
+		return r;
+	}
+
 	static constexpr BossResult resultSuccess = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_BOSS, 0x80);
 	static constexpr BossResult resultInvalidParam = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6, NN_RESULT_MODULE_NN_BOSS, 0x3780);
 	static constexpr BossResult resultUknA0220300 = BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_NN_BOSS, 0x20300);
@@ -501,10 +516,12 @@ namespace boss
 	{
 		betype<BossResult> result;
 
-		static TaskResult* ctor(TaskResult* _this, BossResult result) // __ct__Q3_2nn4boss10TaskResultFQ2_2nn6Result
+		// the nn::Result class argument is passed "by value" as a pointer to a copy (PPC EABI aggregate passing)
+		static TaskResult* ctor(TaskResult* _this, betype<BossResult>* result) // __ct__Q3_2nn4boss10TaskResultFQ2_2nn6Result
 		{
-			_this->result = result;
-			cemuLog_log(LogType::Force, "nn::boss::TaskResult(0x{:08x}) (LR 0x{:08x})", (uint32)result, PPCInterpreter_getCurrentInstance()->spr.LR);
+			BossResult r = result ? (BossResult)*result : 0;
+			_this->result = r;
+			cemuLog_log(LogType::Force, "nn::boss::TaskResult(0x{:08x}) (LR 0x{:08x})", (uint32)r, PPCInterpreter_getCurrentInstance()->spr.LR);
 			return _this;
 		}
 
@@ -643,7 +660,7 @@ namespace boss
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
 			serviceCall.WriteParam<uint8be>(executeImmediately);
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static nnResult StopScheduling(Task* _thisptr)
@@ -651,7 +668,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskStopScheduling));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static bool IsRegistered(Task* _thisptr)
@@ -659,7 +676,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskIsRegistered));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return false;
 			return serviceCall.ReadResponse<uint8be>() != 0;
@@ -673,7 +690,7 @@ namespace boss
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
 			serviceCall.WriteParam<betype<TaskWaitState>>(waitState);
 			serviceCall.WriteParam<uint32be>(timeout);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return false;
 			uint8 isNotTimeout = serviceCall.ReadResponse<uint8be>();
@@ -687,7 +704,7 @@ namespace boss
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
 			serviceCall.WriteParamBuffer(settings, sizeof(TaskSettingCore));
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static BossResult Unregister(Task* _thisptr)
@@ -695,7 +712,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskUnregister));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static BossResult Register(Task* _thisptr, TaskSetting* settings)
@@ -711,7 +728,7 @@ namespace boss
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
 			serviceCall.WriteParamBuffer(settings, sizeof(TaskSettingCore));
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static TaskTurnState GetTurnState(Task* _thisptr, uint32be* executionCounter)
@@ -719,7 +736,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskGetTurnState));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return (TaskTurnState)0;
 			uint32 executionCount = serviceCall.ReadResponse<uint32be>();
@@ -733,7 +750,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskGetContentLength));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			uint32 executionCount = serviceCall.ReadResponse<uint32be>();
@@ -747,7 +764,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskGetProcessedLength));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			uint32 executionCount = serviceCall.ReadResponse<uint32be>();
@@ -761,7 +778,7 @@ namespace boss
 			IPCServiceClient::IPCServiceCall serviceCall = s_ipcClient.Begin(0, stdx::to_underlying(BossCommandId::TaskGetHttpStatusCodeA));
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<TaskId>(_thisptr->taskId);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			uint32 executionCount = serviceCall.ReadResponse<uint32be>();
@@ -956,7 +973,7 @@ namespace boss
 			serviceCall.WriteParam<uint32be>(_thisptr->persistentId);
 			serviceCall.WriteParam<DirectoryName>(_thisptr->storageName);
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storageKind);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			return serviceCall.ReadResponse<uint8be>();
@@ -970,7 +987,7 @@ namespace boss
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storageKind);
 			serviceCall.WriteResponseBuffer(dataList, sizeof(DataName) * maxEntries);
 			serviceCall.WriteParam<uint32be>(startIndex);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			uint32be outputCount = serviceCall.ReadResponse<uint32be>();
 			bool isSuccessByte = serviceCall.ReadResponse<uint8be>() != 0;
 			if (!isSuccessByte)
@@ -1119,7 +1136,7 @@ namespace boss
 			serviceCall.WriteParam<DirectoryName>(_thisptr->storage.storageName);
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storage.storageKind);
 			serviceCall.WriteParam<DataName>(_thisptr->name);
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static BossResult DeleteRealFileWithHistory(NsData* _thisptr)
@@ -1129,7 +1146,7 @@ namespace boss
 			serviceCall.WriteParam<DirectoryName>(_thisptr->storage.storageName);
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storage.storageKind);
 			serviceCall.WriteParam<DataName>(_thisptr->name);
-			return serviceCall.Submit();
+			return _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 		}
 
 		static uint32 Exist(NsData* _thisptr)
@@ -1139,7 +1156,7 @@ namespace boss
 			serviceCall.WriteParam<DirectoryName>(_thisptr->storage.storageName);
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storage.storageKind);
 			serviceCall.WriteParam<DataName>(_thisptr->name);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			return serviceCall.ReadResponse<uint8be>();
@@ -1152,7 +1169,7 @@ namespace boss
 			serviceCall.WriteParam<DirectoryName>(_thisptr->storage.storageName);
 			serviceCall.WriteParam<betype<StorageKind>>(_thisptr->storage.storageKind);
 			serviceCall.WriteParam<DataName>(_thisptr->name);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return 0;
 			return serviceCall.ReadResponse<uint64be>();
@@ -1177,7 +1194,7 @@ namespace boss
 			serviceCall.WriteResponseBuffer(buffer, length);
 			uint64 readOffset = _thisptr->currentSeek;
 			serviceCall.WriteParam<uint64be>(readOffset);
-			nnResult r = serviceCall.Submit();
+			nnResult r = _BossSubmit(serviceCall, BOSS_FUNC_NAME);
 			if (NN_RESULT_IS_FAILURE(r))
 				return r;
 			uint64 numReadBytes = serviceCall.ReadResponse<uint64be>();
