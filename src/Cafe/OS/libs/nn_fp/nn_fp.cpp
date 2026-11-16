@@ -397,8 +397,9 @@ namespace nn
 			uint32 errorCode = 0;
 			if (NN_RESULT_IS_FAILURE(result))
 			{
-				if (nn::nnResult_GetModule(result) == NN_RESULT_MODULE_NN_ACT)
-					errorCode = (uint32)nn::NNResultToErrorCode(result, NN_RESULT_MODULE_NN_ACT); // 102-xxxx
+				NN_RESULT_MODULE module = nn::nnResult_GetModule(result);
+				if (module == NN_RESULT_MODULE_NN_FP || module == NN_RESULT_MODULE_NN_ACT)
+					errorCode = (uint32)nn::NNResultToErrorCode(result, module); // 101-xxxx (friends) / 102-xxxx (account)
 				else
 					errorCode = std::min<uint32>(nn::nnResult_GetDescription(result) >> 7, 9999); // viewer prefix for other modules unknown
 			}

@@ -335,6 +335,8 @@ namespace iosu
 		static const auto FPResult_InvalidIPCParam = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6, NN_RESULT_MODULE_NN_FP, 0x680);
 		static const auto FPResult_RequestFailed = BUILD_NN_RESULT(NN_RESULT_LEVEL_FATAL, NN_RESULT_MODULE_NN_FP, 0); // figure out proper error code
 		static const auto FPResult_Aborted = BUILD_NN_RESULT(NN_RESULT_LEVEL_STATUS, NN_RESULT_MODULE_NN_FP, 0x3480);
+		// account is not linked to a Nintendo Network ID. Shown as 101-0744 (FPD_NOT_NETWORK_ACCOUNT)
+		static const auto FPResult_NotNetworkAccount = BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6, NN_RESULT_MODULE_NN_FP, 744 << 7);
 
 		class FPDService : public iosu::nn::IPCSimpleService
 		{
@@ -647,8 +649,8 @@ namespace iosu
 				}
 				if(accountId.empty())
 				{
-					cemuLog_log(LogType::Force, "GetMyAccountId: AccountID is empty");
-					return FPResult_InvalidIPCParam; // should return 0xC0C00800 ?
+					cemuLog_log(LogType::Force, "GetMyAccountId: AccountID is empty (account has no NNID)");
+					return FPResult_NotNetworkAccount;
 				}
 				char* outputStr = (char*)vecOut->basePhys.GetPtr();
 				memset(outputStr, 0, ACT_ACCOUNTID_LENGTH);

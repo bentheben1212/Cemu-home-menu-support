@@ -78,6 +78,7 @@ namespace nn
 	inline NN_RESULT_MODULE nnResult_GetModule(const nnResult res) { return (NN_RESULT_MODULE)((res >> 20) & 0x1FF); };
 	inline uint32 nnResult_GetDescription(const nnResult res) { return (uint32)((res >> 0) & 0xFFFFF); };
 
+	#define	NN_ERRCODE_MODULE_PREFIX_FP		1010000
 	#define	NN_ERRCODE_MODULE_PREFIX_ACT	1020000
 
 	inline NN_ERROR_CODE NNResultToErrorCode(nnResult result, NN_RESULT_MODULE expectedModule)
@@ -89,6 +90,8 @@ namespace nn
 		uint32 errorCodeBase = 0;
 		if (expectedModule == NN_RESULT_MODULE_NN_ACT)
 			errorCodeBase = NN_ERRCODE_MODULE_PREFIX_ACT;
+		else if (expectedModule == NN_RESULT_MODULE_NN_FP)
+			errorCodeBase = NN_ERRCODE_MODULE_PREFIX_FP;
 		else
 		{
 			cemu_assert_unimplemented();
@@ -111,3 +114,4 @@ namespace nn
 
 // tests
 static_assert(BUILD_NN_RESULT_STATUS(NN_RESULT_MODULE_NN_ACT, 317696) == 0xA074D900);
+static_assert(BUILD_NN_RESULT(NN_RESULT_LEVEL_LVL6, NN_RESULT_MODULE_NN_FP, 0x680) == 0xC0C00680); // FP "invalid argument" -> 101-0013
