@@ -183,6 +183,8 @@ void coreinitExport_OSGetSharedData(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 1);
 }
 
+void PPCInterpreter_dumpRecentHLECallsForStack(uint32 sp, uint32 maxEntries); // PPCInterpreterHLE.cpp
+
 namespace coreinit
 {
 	COSStaticData g_coreinitStaticData;
@@ -266,10 +268,7 @@ namespace coreinit
 		cemuLog_log(LogType::Force, "Msg: {}", msg);
 		DebugLogStackTrace(coreinit::OSGetCurrentThread(), coreinit::OSGetStackPointer());
 		coreinit::__OSDumpRecentConsoleOutput(); // asserts usually print their reason via OSReport before panicking
-		{
-			extern void PPCInterpreter_dumpRecentHLECallsForStack(uint32 sp, uint32 maxEntries);
-			PPCInterpreter_dumpRecentHLECallsForStack(PPCInterpreter_getCurrentInstance()->gpr[1], 48); // only recorded while an HLE trace is active
-		}
+		PPCInterpreter_dumpRecentHLECallsForStack(PPCInterpreter_getCurrentInstance()->gpr[1], 48); // only recorded while an HLE trace is active
 #ifdef CEMU_DEBUG_ASSERT
 		while (true) std::this_thread::sleep_for(std::chrono::milliseconds(100));
 #endif
