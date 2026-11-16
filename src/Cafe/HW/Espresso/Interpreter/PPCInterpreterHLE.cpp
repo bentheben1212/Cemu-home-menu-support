@@ -21,14 +21,15 @@ bool PPCInterpreter_isHLETraceActive()
 	sint64 deadline = s_hleTraceDeadline.load(std::memory_order_relaxed);
 	if (deadline == 0)
 		return false;
-	if (_HLETraceNowMs() > deadline || s_hleTraceLinesLeft.load(std::memory_order_relaxed) <= 0)
+	if (_HLETraceNowMs() > deadline)
 	{
 		sint64 expected = deadline;
 		if (s_hleTraceDeadline.compare_exchange_strong(expected, 0))
 			cemuLog_log(LogType::Force, "HLE trace: end");
 		return false;
 	}
-	return true;
+	// past the line limit: stop logging, but keep recording calls for OSPanic until the time window ends
+	return s_hleTraceLinesLeft.load(std::memory_order_relaxed) > 0;
 }
 
 void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, sint32 maxLines)
@@ -43,6 +44,71 @@ void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, 
 void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs)
 {
 	PPCInterpreter_startHLETraceEx(reason, durationMs, 300);
+}
+
+// While a trace window is open, every HLE call (unfiltered, including mutex/atomic/memory calls) is also recorded
+// in a ring buffer. OSPanic dumps the entries of the panicking thread, identified by its stack pointer range
+struct HLERecentCall
+{
+	const char* name;
+	uint32 r3, r4, r5, r6, lr, sp, result;
+	bool hasResult;
+};
+static HLERecentCall s_hleRecentCalls[1024];
+static uint32 s_hleRecentCallIndex = 0;
+static std::mutex s_hleRecentCallMutex;
+
+static bool _HLERecordingActive()
+{
+	sint64 deadline = s_hleTraceDeadline.load(std::memory_order_relaxed);
+	return deadline != 0 && _HLETraceNowMs() <= deadline;
+}
+
+static uint32 _HLERecordCall(const char* name, PPCInterpreter_t* hCPU)
+{
+	std::unique_lock _l(s_hleRecentCallMutex);
+	uint32 idx = s_hleRecentCallIndex++;
+	HLERecentCall& e = s_hleRecentCalls[idx % 1024];
+	e.name = name;
+	e.r3 = hCPU->gpr[3]; e.r4 = hCPU->gpr[4]; e.r5 = hCPU->gpr[5]; e.r6 = hCPU->gpr[6];
+	e.lr = hCPU->spr.LR; e.sp = hCPU->gpr[1];
+	e.result = 0; e.hasResult = false;
+	return idx;
+}
+
+static void _HLERecordResult(uint32 idx, uint32 result)
+{
+	std::unique_lock _l(s_hleRecentCallMutex);
+	if (s_hleRecentCallIndex - idx > 1024)
+		return; // overwritten
+	HLERecentCall& e = s_hleRecentCalls[idx % 1024];
+	e.result = result;
+	e.hasResult = true;
+}
+
+// log the most recent recorded calls made with a stack pointer close to sp (= by the same thread)
+void PPCInterpreter_dumpRecentHLECallsForStack(uint32 sp, uint32 maxEntries)
+{
+	std::unique_lock _l(s_hleRecentCallMutex);
+	std::vector<const HLERecentCall*> matches;
+	uint32 count = std::min<uint32>(s_hleRecentCallIndex, 1024);
+	for (uint32 i = 0; i < count && matches.size() < maxEntries; i++)
+	{
+		const HLERecentCall& e = s_hleRecentCalls[(s_hleRecentCallIndex - 1 - i) % 1024];
+		if (e.sp + 0x20000 >= sp && e.sp <= sp + 0x20000)
+			matches.emplace_back(&e);
+	}
+	if (matches.empty())
+		return;
+	cemuLog_log(LogType::Force, "Last {} OS calls of this thread (oldest first):", matches.size());
+	for (auto it = matches.rbegin(); it != matches.rend(); ++it)
+	{
+		const HLERecentCall& e = **it;
+		if (e.hasResult)
+			cemuLog_log(LogType::Force, "  {} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> 0x{:08x}", e.name, e.r3, e.r4, e.r5, e.r6, e.lr, e.result);
+		else
+			cemuLog_log(LogType::Force, "  {} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> (no return yet)", e.name, e.r3, e.r4, e.r5, e.r6, e.lr);
+	}
 }
 
 // skip high frequency calls that say nothing about what the title decides
@@ -90,12 +156,32 @@ void PPCInterpreter_callHLE(PPCInterpreter_t* hCPU, HLEIDX funcIndex)
 {
 	HLECALL hleCall = PPCInterpreter_getHLECall(funcIndex);
 	cemu_assert(hleCall);
-	if (!PPCInterpreter_isHLETraceActive()) [[likely]]
+	if (s_hleTraceDeadline.load(std::memory_order_relaxed) == 0) [[likely]]
 	{
 		hleCall(hCPU);
 		return;
 	}
 	const std::string& name = s_hleTableNames[funcIndex];
+	if (_HLERecordingActive())
+	{
+		uint32 recordIdx = _HLERecordCall(name.c_str(), hCPU);
+		if (!PPCInterpreter_isHLETraceActive() || !_HLETraceShouldLog(name))
+		{
+			hleCall(hCPU);
+			_HLERecordResult(recordIdx, hCPU->gpr[3]);
+			return;
+		}
+		uint32 r3 = hCPU->gpr[3], r4 = hCPU->gpr[4], r5 = hCPU->gpr[5], r6 = hCPU->gpr[6], lr = hCPU->spr.LR;
+		hleCall(hCPU);
+		_HLERecordResult(recordIdx, hCPU->gpr[3]);
+		cemuLog_log(LogType::Force, "HLE trace: {} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> 0x{:08x}", name, r3, r4, r5, r6, lr, hCPU->gpr[3]);
+		return;
+	}
+	if (!PPCInterpreter_isHLETraceActive())
+	{
+		hleCall(hCPU);
+		return;
+	}
 	if (!_HLETraceShouldLog(name))
 	{
 		hleCall(hCPU);
@@ -117,6 +203,8 @@ void PPCInterpreter_handleUnsupportedHLECall(PPCInterpreter_t* hCPU)
 		std::unique_lock _l(s_hleLogMutex);
 		const char* libFuncName = (char*)memory_getPointerFromVirtualOffset(hCPU->instructionPointer + 8);
 		uint64 count = ++s_unsupportedHLECallCount[hCPU->instructionPointer];
+		if (_HLERecordingActive())
+			_HLERecordResult(_HLERecordCall(libFuncName, hCPU), 0);
 		if (PPCInterpreter_isHLETraceActive())
 			PPCInterpreter_traceHLECallUnsupported(hCPU, libFuncName);
 		if (count == 1)
