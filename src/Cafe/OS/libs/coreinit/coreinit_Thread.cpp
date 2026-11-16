@@ -695,9 +695,15 @@ namespace coreinit
 			return false;
 		}
 
+		// re-validate after waking up: another joiner (all joiners are woken by OSExitThread) or OSDetachThread
+		// may have already deactivated the thread. Deactivating it a second time trips the active-list assert
+		if (thread->state != OSThread_t::THREAD_STATE::STATE_MORIBUND || (thread->attr & OSThread_t::ATTR_DETACHED) != 0 || !__OSIsThreadActive(thread))
+		{
+			cemuLog_log(LogType::Force, "OSJoinThread: thread 0x{:08x} was already joined or detached by another thread", MEMPTR<OSThread_t>(thread).GetMPTR());
+			__OSUnlockScheduler();
+			return false;
+		}
 		// thread already ended and is still attached, get return value
-		cemu_assert_debug(thread->state == OSThread_t::THREAD_STATE::STATE_MORIBUND);
-		cemu_assert_debug((thread->attr & OSThread_t::ATTR_DETACHED) == 0);
 		if (exitValue)
 			*exitValue = thread->exitValue;
 		// end thread
@@ -994,14 +1000,40 @@ namespace coreinit
         return isRunning;
     }
 
+	// stateFlags bit 0: cancellation (and suspension at cancel points) disabled. Stored big-endian
+	static bool _IsThreadCancelDisabled(OSThread_t* thread)
+	{
+		return (_swapEndianU32(thread->stateFlags) & 1) != 0;
+	}
+
+	// returns the previous state. TRUE disables cancellation (pending cancel requests are deferred until re-enabled)
+	uint32 OSSetThreadCancelState(uint32 disableCancel)
+	{
+		OSThread_t* thread = OSGetCurrentThread();
+		__OSLockScheduler();
+		uint32 flags = _swapEndianU32(thread->stateFlags);
+		uint32 previous = flags & 1;
+		flags = disableCancel ? (flags | 1) : (flags & ~1u);
+		thread->stateFlags = _swapEndianU32(flags);
+		__OSUnlockScheduler();
+		return previous;
+	}
+
+	// Semantics unknown. Cemu tears down all guest threads itself when the process exits or switches title,
+	// so there is nothing to block here
+	void OSBlockThreadsOnExit()
+	{
+		cemuLog_logOnce(LogType::Force, "OSBlockThreadsOnExit() - no-op");
+	}
+
     void OSCancelThread(OSThread_t* thread)
 	{
 		__OSLockScheduler();
 		cemu_assert_debug(thread->requestFlags == 0 || thread->requestFlags == OSThread_t::REQUEST_FLAG_CANCEL); // todo - how to handle cases where other flags are already set?
 		thread->requestFlags = OSThread_t::REQUEST_FLAG_CANCEL;
 		__OSUnlockScheduler();
-		// if the canceled thread is self, then exit immediately
-		if (thread == OSGetCurrentThread())
+		// if the canceled thread is self, then exit immediately (unless cancellation is disabled, then it stays pending)
+		if (thread == OSGetCurrentThread() && !_IsThreadCancelDisabled(thread))
 			OSExitThread(-1);
 	}
 
@@ -1010,7 +1042,7 @@ namespace coreinit
 		// also handles suspend request ?
 		cemu_assert_debug(__OSHasSchedulerLock());
 		OSThread_t* thread = OSGetCurrentThread();
-		if (thread->requestFlags == OSThread_t::REQUEST_FLAG_CANCEL)
+		if (thread->requestFlags == OSThread_t::REQUEST_FLAG_CANCEL && !_IsThreadCancelDisabled(thread))
 		{
 			__OSUnlockScheduler();
 			OSExitThread(-1);
@@ -1631,6 +1663,8 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSIsThreadSuspended, LogType::CoreinitThread);
 		cafeExportRegister("coreinit", OSCancelThread, LogType::CoreinitThread);
 		cafeExportRegister("coreinit", OSTestThreadCancel, LogType::CoreinitThread);
+		cafeExportRegister("coreinit", OSSetThreadCancelState, LogType::CoreinitThread);
+		cafeExportRegister("coreinit", OSBlockThreadsOnExit, LogType::CoreinitThread);
 
 		cafeExportRegister("coreinit", OSGetDefaultThread, LogType::CoreinitThread);
 

@@ -737,7 +737,11 @@ namespace coreinit
 		s_queuedTitleSwitch.store(titleId);
 	}
 
-	uint32 __LaunchByTitleId(uint64 titleId, uint32 argc, MEMPTR<char>* argv)
+	static std::atomic<uint32> s_processGeneration = 0; // incremented on every title start
+	static std::atomic<bool> s_forcedSwitchInProgress = false;
+
+	// caller/main-app bookkeeping shared by all title switch paths
+	static void _BeginTitleSwitch(uint64 titleId)
 	{
 		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
 		if (!_IsAppletTitle(currentTitleId))
@@ -746,6 +750,33 @@ namespace coreinit
 		s_startedViaTitleSwitch = true;
 		s_queuedTitleSwitch.store(0);
 		cemuLog_log(LogType::Force, "Title switch: {:016x} -> {:016x} (main app {:016x})", currentTitleId, titleId, s_mainAppTitleId);
+	}
+
+	// If the app doesn't exit within a few seconds after receiving the Exit message, perform the queued
+	// title switch from the host side, like the _Exit path does. Saves are already done at this point
+	// (the app signalled the foreground release / OSSavesDone_ReadyToRelease before Exit was sent)
+	static void _StartExitWatchdog()
+	{
+		uint32 generation = s_processGeneration.load();
+		std::thread([generation]() {
+			std::this_thread::sleep_for(std::chrono::seconds(5));
+			if (generation != s_processGeneration.load() || !CafeSystem::IsTitleRunning())
+				return; // process already exited/switched or emulation was stopped
+			uint64 titleId = s_queuedTitleSwitch.exchange(0);
+			if (titleId == 0)
+				return; // the normal exit path claimed the switch
+			s_forcedSwitchInProgress = true;
+			cemuLog_log(LogType::Force, "System: app did not exit within 5s after Exit message, forcing queued switch to {:016x}", titleId);
+			_BeginTitleSwitch(titleId);
+			std::vector<std::string> noArgs;
+			CafeSystem::SetOverrideArgs(noArgs);
+			OSLauncherThread(titleId);
+		}).detach();
+	}
+
+	uint32 __LaunchByTitleId(uint64 titleId, uint32 argc, MEMPTR<char>* argv)
+	{
+		_BeginTitleSwitch(titleId);
 		// prepare argument buffer
 		#if 0
 		char argumentBuffer[4096];
@@ -891,6 +922,7 @@ namespace coreinit
 		s_releaseForShutdownPending = false;
 		if (!_SendSystemMessage(SysMessageId::MsgExit, 0))
 			s_exitMessagePending = true; // queue full, retry in UpdateSystemMessageQueue
+		_StartExitWatchdog();
 	}
 
 	void OSReleaseForeground()
@@ -987,6 +1019,13 @@ namespace coreinit
 	// ends the process. If a title switch was queued (e.g. by _SYSSwitchToMainApp) the queued title is launched instead
 	static void __ExitProcessOrSwitch(sint32 status)
 	{
+		if (s_forcedSwitchInProgress)
+		{
+			// the exit watchdog is already tearing down this process to switch titles, don't end emulation
+			cemuLog_log(LogType::Force, "Process exit with status {} during forced title switch, suspending thread", status);
+			coreinit::OSSuspendThread(coreinit::OSGetCurrentThread());
+			return;
+		}
 		uint64 queuedTitleId = s_queuedTitleSwitch.exchange(0);
 		if (queuedTitleId != 0)
 		{
@@ -1026,6 +1065,8 @@ namespace coreinit
 		}
 		s_startedViaTitleSwitch = false;
 		s_queuedTitleSwitch.store(0);
+		s_processGeneration++;
+		s_forcedSwitchInProgress = false;
 		s_sdkVersion = CafeSystem::GetForegroundTitleSDKVersion();
 		s_forwardConsoleLogs = LaunchSettings::ForwardConsoleLogging();
 		s_transitionToBackground = false;
