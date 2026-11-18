@@ -11,6 +11,18 @@ static std::mutex s_hleTraceMutex;
 static std::unordered_map<std::string, uint32> s_hleTraceNameCount;
 static std::string s_hleTableNames[0x4000];
 
+// Logging the trace ("HLE trace:" lines) is off by default since it makes logs very long. Set the environment
+// variable CEMU_HLE_TRACE=1 to enable it. The trace windows still open without it, so OSPanic can list the last
+// OS calls of the panicking thread
+static bool _HLETraceLoggingEnabled()
+{
+	static const bool s_enabled = []() {
+		const char* v = getenv("CEMU_HLE_TRACE");
+		return v && *v && strcmp(v, "0") != 0;
+	}();
+	return s_enabled;
+}
+
 static sint64 _HLETraceNowMs()
 {
 	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -24,10 +36,12 @@ bool PPCInterpreter_isHLETraceActive()
 	if (_HLETraceNowMs() > deadline)
 	{
 		sint64 expected = deadline;
-		if (s_hleTraceDeadline.compare_exchange_strong(expected, 0))
+		if (s_hleTraceDeadline.compare_exchange_strong(expected, 0) && _HLETraceLoggingEnabled())
 			cemuLog_log(LogType::Force, "HLE trace: end");
 		return false;
 	}
+	if (!_HLETraceLoggingEnabled())
+		return false;
 	// past the line limit: stop logging, but keep recording calls for OSPanic until the time window ends
 	return s_hleTraceLinesLeft.load(std::memory_order_relaxed) > 0;
 }
@@ -38,7 +52,8 @@ void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, 
 	s_hleTraceNameCount.clear();
 	s_hleTraceLinesLeft = maxLines;
 	s_hleTraceDeadline = _HLETraceNowMs() + durationMs;
-	cemuLog_log(LogType::Force, "HLE trace: start ({}), logging OS library calls for {} ms (max {} lines)", reason, durationMs, maxLines);
+	if (_HLETraceLoggingEnabled())
+		cemuLog_log(LogType::Force, "HLE trace: start ({}), logging OS library calls for {} ms (max {} lines)", reason, durationMs, maxLines);
 }
 
 void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs)
