@@ -549,6 +549,20 @@ namespace iosu
 		// fill the size fields of a quota directory's stat
 		static void _FSASetQuotaDirectoryStat(std::string_view translatedPath, FSStat_t* fsStatOut)
 		{
+			// the root of the MLC volume reports the usable capacity as its quota and the used space as its size.
+			// Data Management takes the capacity from here (with 0 it shows the memory as full)
+			std::string_view rootPath = translatedPath;
+			while (rootPath.size() > 1 && rootPath.back() == '/')
+				rootPath.remove_suffix(1);
+			if (rootPath == "/vol/storage_mlc01")
+			{
+				uint64 used = std::min<uint64>(_GetMlcUsedSpace(), STORAGE_MLC_USABLE_SIZE);
+				fsStatOut->size = (uint32)std::min<uint64>(used, 0xFFFFFFFFull);
+				fsStatOut->allocatedSize = (uint32)std::min<uint64>(used, 0xFFFFFFFFull);
+				fsStatOut->quotaSize = STORAGE_MLC_USABLE_SIZE;
+				fsStatOut->flag = fsStatOut->flag | FSFlag::IS_QUOTA;
+				return;
+			}
 			if (!_IsQuotaDirectory(translatedPath))
 				return;
 			uint64 size = _GetQuotaDirectorySize(std::string(translatedPath));
