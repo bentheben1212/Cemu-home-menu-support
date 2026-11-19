@@ -356,6 +356,7 @@ namespace iosu
 
 	sint32 ACPGetTitleMetaData(uint64 titleId, acpMetaData_t* acpMetaData)
 	{
+		CafeSystem::MlcStorageMountAllTitles(); // titles from the game paths are only reachable once mounted
 		memset(acpMetaData, 0, sizeof(acpMetaData_t));
 
 		char titlePath[1024];
@@ -401,6 +402,7 @@ namespace iosu
 
 	sint32 ACPGetTitleMetaXml(uint64 titleId, acpMetaXml_t* acpMetaXml)
 	{
+		CafeSystem::MlcStorageMountAllTitles(); // titles from the game paths are only reachable once mounted
 		memset(acpMetaXml, 0, sizeof(acpMetaXml_t));
 
 		char titlePath[1024];

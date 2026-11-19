@@ -235,6 +235,17 @@ namespace iosu
 		_FSAHandleTable sFileHandleTable;
 		_FSAHandleTable sDirHandleTable;
 
+		// Failed opens of title meta files (icons, meta.xml, ...) in the virtual MLC storage are always logged, they
+		// show titles that are missing from /vol/storage_mlc01/. Other failed opens are logged with "File access" logging
+		static void _FSALogOpenFailure(const char* type, std::string_view path)
+		{
+			bool isTitleMeta = path.starts_with("/vol/storage_mlc01/") && path.find("/meta") != std::string_view::npos;
+			if (isTitleMeta)
+				cemuLog_log(LogType::Force, "FSA: Open {} {} failed (not found)", type, path);
+			else
+				cemuLog_log(LogType::CoreinitFile, "Open {} {} (result: not found)", type, path);
+		}
+
 		FSA_RESULT __FSAOpenFile(FSAClient* client, const char* path, const char* accessModifierStr, sint32* fileHandle)
 		{
 			*fileHandle = FS_INVALID_HANDLE_VALUE;
@@ -282,7 +293,10 @@ namespace iosu
 			sint32 fscStatus;
 			FSCVirtualFile* fscFile = __FSAOpenNode(client, path, accessModifier, fscStatus);
 			if (!fscFile)
+			{
+				_FSALogOpenFailure("file", path);
 				return FSA_RESULT::NOT_FOUND;
+			}
 			if (fscFile->fscGetType() != FSC_TYPE_FILE)
 			{
 				delete fscFile;
@@ -309,7 +323,10 @@ namespace iosu
 			sint32 fscStatus;
 			FSCVirtualFile* fscFile = __FSAOpenNode(client, path, FSC_ACCESS_FLAG::OPEN_DIR | FSC_ACCESS_FLAG::OPEN_FILE, fscStatus);
 			if (!fscFile)
+			{
+				_FSALogOpenFailure("directory", path);
 				return FSA_RESULT::NOT_FOUND;
+			}
 			if (fscFile->fscGetType() != FSC_TYPE_DIRECTORY)
 			{
 				delete fscFile;

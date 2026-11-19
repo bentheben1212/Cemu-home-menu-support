@@ -1213,11 +1213,13 @@ namespace CafeSystem
 	}
 
 	std::map<TitleId, TitleInfo*> m_mlcMountedTitles;
+	std::recursive_mutex sMlcStorageMutex; // mounting happens from the launch thread and from IOSU (MCP/ACP) request threads
 
 	// mount title to our virtual MLC storage
 	// /vol/storage_mlc01/<usr or sys>/title/<titleIdHigh>/<titleIdLow>
 	void MlcStorageMountTitle(TitleInfo& titleInfo)
 	{
+		std::unique_lock _l(sMlcStorageMutex);
 		if (!titleInfo.IsValid())
 		{
 			cemu_assert_suspicious();
@@ -1245,21 +1247,34 @@ namespace CafeSystem
 		MlcStorageMountTitle(titleInfo);
 	}
 
+	bool sMlcStorageAllTitlesMounted = false;
+
+	// mounts every known title (including titles from the game paths) to the virtual MLC storage, so system titles
+	// like the Wii U Menu can read their meta/icon files. Called on the first title list request of each title run
 	void MlcStorageMountAllTitles()
 	{
+		std::unique_lock _l(sMlcStorageMutex);
+		if (sMlcStorageAllTitlesMounted)
+			return;
 		std::vector<uint64> titleIds = CafeTitleList::GetAllTitleIds();
 		for (auto& it : titleIds)
 			MlcStorageMountTitle(it);
+		sMlcStorageAllTitlesMounted = true;
+		cemuLog_log(LogType::Force, "Virtual MLC storage: mounted {} titles", m_mlcMountedTitles.size());
 	}
 
+    // called by ShutdownTitle. On a title switch (e.g. returning to the Wii U Menu) MlcStorageMountAllTitles has to
+    // run again, otherwise titles from the game paths are missing from /vol/storage_mlc01/ for the next title
     void MlcStorageUnmountAllTitles()
     {
+        std::unique_lock _l(sMlcStorageMutex);
         for(auto& it : m_mlcMountedTitles)
         {
             std::string mlcStoragePath = GetMlcStoragePath(it.first);
             it.second->Unmount(mlcStoragePath);
         }
         m_mlcMountedTitles.clear();
+        sMlcStorageAllTitlesMounted = false;
     }
 
 	uint32 GetRPXHashBase()

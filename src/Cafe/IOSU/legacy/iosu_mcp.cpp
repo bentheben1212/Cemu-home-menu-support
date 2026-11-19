@@ -23,8 +23,6 @@ namespace iosu
 	std::recursive_mutex sTitleInfoMutex;
 	constinit IOSUStaticData s_mcpStaticData;
 
-	bool sHasAllTitlesMounted = false;
-
 	uint32 mcpBuildTitleList(MCPTitleInfo* titleList, uint32 maxTitlesToCopy, std::function<bool(const TitleInfo&)> filterFunc)
 	{
 		CafeTitleList::WaitForMandatoryScan();
@@ -64,11 +62,7 @@ namespace iosu
 		}
 		CafeTitleList::ReleaseInternalList();
 
-		if (!sHasAllTitlesMounted)
-		{
-			CafeSystem::MlcStorageMountAllTitles();
-			sHasAllTitlesMounted = true;
-		}
+		CafeSystem::MlcStorageMountAllTitles(); // no-op if already mounted for the current title run
 
 		return numTitlesCopied;
 	}
