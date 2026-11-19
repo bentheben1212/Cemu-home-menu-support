@@ -433,6 +433,15 @@ void cemu_initForGame()
 		extern void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, sint32 maxLines);
 		PPCInterpreter_startHLETraceEx("applet startup", 8000, 800);
 	}
+	// CEMU_HLE_TRACE_TITLE=<16 hex digit title id>: trace every OS call of that title's whole run
+	if (const char* traceTitle = getenv("CEMU_HLE_TRACE_TITLE"); traceTitle && *traceTitle)
+	{
+		if (std::strtoull(traceTitle, nullptr, 16) == CafeSystem::GetForegroundTitleId())
+		{
+			extern void PPCInterpreter_startHLETraceTitleRun(uint64 titleId);
+			PPCInterpreter_startHLETraceTitleRun(CafeSystem::GetForegroundTitleId());
+		}
+	}
 	// wait till GPU thread is initialized
 	while (g_isGPUInitFinished == false) std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	// run coreinit rpl_entry

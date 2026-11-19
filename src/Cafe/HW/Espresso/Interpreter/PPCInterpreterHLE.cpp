@@ -18,7 +18,8 @@ static bool _HLETraceLoggingEnabled()
 {
 	static const bool s_enabled = []() {
 		const char* v = getenv("CEMU_HLE_TRACE");
-		return v && *v && strcmp(v, "0") != 0;
+		const char* t = getenv("CEMU_HLE_TRACE_TITLE");
+		return (v && *v && strcmp(v, "0") != 0) || (t && *t);
 	}();
 	return s_enabled;
 }
@@ -46,14 +47,25 @@ bool PPCInterpreter_isHLETraceActive()
 	return s_hleTraceLinesLeft.load(std::memory_order_relaxed) > 0;
 }
 
+static uint32 s_hleTraceMaxPerName = 4; // each function name is logged at most this many times per trace
+
 void PPCInterpreter_startHLETraceEx(std::string_view reason, uint32 durationMs, sint32 maxLines)
 {
 	std::unique_lock _l(s_hleTraceMutex);
 	s_hleTraceNameCount.clear();
+	s_hleTraceMaxPerName = 4;
 	s_hleTraceLinesLeft = maxLines;
 	s_hleTraceDeadline = _HLETraceNowMs() + durationMs;
 	if (_HLETraceLoggingEnabled())
 		cemuLog_log(LogType::Force, "HLE trace: start ({}), logging OS library calls for {} ms (max {} lines)", reason, durationMs, maxLines);
+}
+
+// CEMU_HLE_TRACE_TITLE=<title id>: trace the whole run of that title, with up to 1000 lines per function name
+void PPCInterpreter_startHLETraceTitleRun(uint64 titleId)
+{
+	PPCInterpreter_startHLETraceEx(fmt::format("whole run of {:016x}, CEMU_HLE_TRACE_TITLE", titleId), 24 * 60 * 60 * 1000, 50000);
+	std::unique_lock _l(s_hleTraceMutex);
+	s_hleTraceMaxPerName = 1000;
 }
 
 void PPCInterpreter_startHLETrace(std::string_view reason, uint32 durationMs)
@@ -133,6 +145,8 @@ static bool _HLETraceIsNoise(std::string_view name)
 	for (auto& lib : noisyLibs)
 		if (name.starts_with(lib))
 			return true;
+	if (name.starts_with("coreinit.FS") || name.starts_with("coreinit.MCP") || name.starts_with("coreinit.IOS"))
+		return false; // filesystem, title and IPC calls are never noise
 	if (name.starts_with("coreinit."))
 	{
 		static const std::string_view noisyCoreinit[] = { "Mutex", "Lock", "Event", "Time", "Tick", "Alarm", "Cond", "Spin", "Message", "Thread", "Interrupt", "Coroutine", "MEM", "memcpy", "memset", "memmove", "BlockMove", "BlockSet", "snprintf", "sprintf", "Cache", "Semaphore", "Rendezvous", "FastMutex", "Atomic", "OSGetCoreId", "OSIsMainCore", "OSGetSystemTime", "Heap", "Alloc", "Free" };
@@ -151,7 +165,7 @@ static bool _HLETraceShouldLog(std::string_view name)
 	std::unique_lock _l(s_hleTraceMutex);
 	uint32& count = s_hleTraceNameCount[std::string(name)];
 	count++;
-	if (count > 4)
+	if (count > s_hleTraceMaxPerName)
 		return false;
 	if (s_hleTraceLinesLeft.fetch_sub(1) <= 0)
 		return false;

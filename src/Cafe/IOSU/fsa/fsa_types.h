@@ -87,6 +87,7 @@ enum class FSFlag : uint32
 	NONE = 0,
 	IS_DIR = 0x80000000,
 	IS_FILE = 0x01000000,
+	IS_QUOTA = 0x60000000, // directory with a quota (title/save folders), as FS_STAT_QUOTA in wut
 };
 DEFINE_ENUM_FLAG_OPERATORS(FSFlag);
 
