@@ -435,8 +435,49 @@ namespace iosu
 		return 0;
 	}
 
+	// total size of all files below a virtual (fsc) directory
+	static uint64 _ACPDirectoryTotalSize(const std::string& path, sint32 depth = 0)
+	{
+		if (depth > 32)
+			return 0;
+		sint32 fscStatus;
+		FSCVirtualFile* dir = fsc_openDirIterator(path.c_str(), &fscStatus);
+		if (!dir)
+			return 0;
+		uint64 total = 0;
+		FSCDirEntry entry;
+		while (fsc_nextDir(dir, &entry))
+		{
+			if (entry.isFile)
+				total += entry.fileSize;
+			else if (entry.isDirectory)
+				total += _ACPDirectoryTotalSize(fmt::format("{}/{}", path, entry.GetPath()), depth + 1);
+		}
+		fsc_close(dir);
+		return total;
+	}
+
+	// size of a title as installed: base title plus its update and DLC (code + content + meta), from mlc01 or the game paths
+	static uint64 _ACPGetTitleInstalledSize(uint64 titleId)
+	{
+		CafeSystem::MlcStorageMountAllTitles();
+		uint64 baseTitleId = (titleId & ~0xFFFFFFFF00000000ull) | 0x0005000000000000ull;
+		uint64 total = 0;
+		for (uint64 typeHigh : { 0x00050000ull, 0x0005000Eull, 0x0005000Cull })
+		{
+			uint64 id = (typeHigh << 32) | (baseTitleId & 0xFFFFFFFF);
+			total += _ACPDirectoryTotalSize(CafeSystem::GetMlcStoragePath(id));
+		}
+		return total;
+	}
+
 	sint32 ACPGetTitleSaveDirEx(uint64 titleId, uint32 storageDeviceGuessed, acpSaveDirInfo_t* saveDirInfo, sint32 maxCount, uint32be* countOut)
 	{
+		// Data Management (System Settings) builds its software list from this call. Each entry has two 64 bit size
+		// fields whose meaning isn't confirmed: sizeA gets the installed size of the title (on the first entry only, so
+		// a sum over entries counts it once) and sizeB the size of that save folder. The values are logged
+		uint64 titleInstalledSize = _ACPGetTitleInstalledSize(titleId);
+		bool titleSizeAssigned = false;
 		sint32 count = 0;
 
 		const char* devicePath = "/vol/storage_mlc01/";
@@ -455,22 +496,18 @@ namespace iosu
 			if (count < maxCount)
 			{
 				// get dir size
-				sprintf(tempPath, "%susr/save/%08x/%08x/user/common/", devicePath, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
-				FSCVirtualFile* fscDir = fsc_open(tempPath, FSC_ACCESS_FLAG::OPEN_DIR, &fscStatus);
-				uint64 dirSize = 0;
-				if (fscDir)
-				{
-					dirSize = fsc_getFileSize(fscDir);
-					fsc_close(fscDir);
-				}
+				sprintf(tempPath, "%susr/save/%08x/%08x/user/common", devicePath, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
+				uint64 dirSize = _ACPDirectoryTotalSize(tempPath);
 
 				memset(entry, 0, sizeof(acpSaveDirInfo_t));
 				entry->ukn00 = (uint32)(titleId>>32);
 				entry->ukn04 = (uint32)(titleId&0xFFFFFFFF);
 				entry->persistentId = 0; // 0 -> common save
 				entry->ukn0C = 0;
-				entry->sizeA = _swapEndianU64(0); // ukn
+				entry->sizeA = _swapEndianU64(titleSizeAssigned ? 0 : titleInstalledSize);
 				entry->sizeB = _swapEndianU64(dirSize);
+				cemuLog_log(LogType::Force, "ACPGetTitleSaveDirEx({:016x}): entry {} common save: sizeA {} (title) sizeB {} (save)", titleId, count, titleSizeAssigned ? 0 : titleInstalledSize, dirSize);
+				titleSizeAssigned = true;
 				entry->time = _swapEndianU64((coreinit::OSGetTime() / ESPRESSO_TIMER_CLOCK));
 				sprintf(entry->path, "%susr/save/%08x/%08x/meta/", devicePath, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
 				count++;
@@ -504,8 +541,12 @@ namespace iosu
 					entry->ukn04 = (uint32)(titleId & 0xFFFFFFFF); // titleId?
 					entry->persistentId = persistentId; // 0 -> common save
 					entry->ukn0C = 0;
-					entry->sizeA = _swapEndianU64(0);
-					entry->sizeB = _swapEndianU64(0);
+					sprintf(tempPath, "%susr/save/%08x/%08x/user/%08x", devicePath, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF), persistentId);
+					uint64 userDirSize = _ACPDirectoryTotalSize(tempPath);
+					entry->sizeA = _swapEndianU64(titleSizeAssigned ? 0 : titleInstalledSize);
+					entry->sizeB = _swapEndianU64(userDirSize);
+					cemuLog_log(LogType::Force, "ACPGetTitleSaveDirEx({:016x}): entry {} user {:08x}: sizeA {} (title) sizeB {} (save)", titleId, count, persistentId, titleSizeAssigned ? 0 : titleInstalledSize, userDirSize);
+					titleSizeAssigned = true;
 					entry->time = _swapEndianU64((coreinit::OSGetTime() / ESPRESSO_TIMER_CLOCK));
 					sprintf(entry->path, "%susr/save/%08x/%08x/meta/", devicePath, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
 					count++;

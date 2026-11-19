@@ -100,7 +100,12 @@ namespace nn
 
 		sint32 GetStorageInfo(StorageInfo* storageInfo, StorageIndex* storageIndex)
 		{
-			cemuLog_logDebug(LogType::Force, "GetStorageInfo() - stub");
+			static uint32 s_logCount = 0;
+			if (s_logCount < 8)
+			{
+				s_logCount++;
+				cemuLog_log(LogType::Force, "nn_spm.GetStorageInfo(index 0x{:016x}) - stub, StorageInfo is not filled", storageIndex->Get());
+			}
 			if(storageIndex->Get() == (uint64)CemuStorageIndex::MLC)
 			{
 				cemu_assert_unimplemented();
