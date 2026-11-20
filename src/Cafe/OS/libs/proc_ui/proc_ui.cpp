@@ -707,8 +707,10 @@ namespace proc_ui
 				s_previouslyWasBlocking = false;
 				if ( !ProcessSysMessage(&msg) )
 					return s_currentProcUIStatus;
+				// background processes (e.g. the HOME Menu) don't use the background thread, the message was received directly above
+				continue;
 			}
-			// this code should only run if the background thread was started? Maybe rearrange the code to make this more clear
+			// only reached by foreground processes, which started the background thread when releasing the foreground
 			OSWaitEvent(&s_eventBackgroundThreadGotMessage);
 			OSResetEvent(&s_eventBackgroundThreadGotMessage);
 			OSJoinThread(&s_backgroundThread, nullptr);
