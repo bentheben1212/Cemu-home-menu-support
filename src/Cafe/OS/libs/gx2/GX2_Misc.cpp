@@ -79,6 +79,70 @@ void gx2Export_GX2SampleBottomGPUCycle(PPCInterpreter_t* hCPU)
 namespace GX2
 {
 	CafeStaticVar<uint8, 640 * 480 * 4, 0x1000> _lastFrame{s_gx2StaticData};
+
+	/* Last frame of the previous title
+	   On a console, applets and the HOME Menu draw the last frame of the title they were opened from (dimmed) behind
+	   them, via GX2GetLastFrame. Before a title switch that wants this (e.g. HOME on the Wii U Menu), the TV image is
+	   captured through the renderer's screenshot path and kept on the host side across the title switch */
+	static std::mutex s_lastFrameMutex;
+	static std::vector<uint8> s_lastFrameRGB; // captured TV frame, 8 bit RGB, top-down
+	static sint32 s_lastFrameWidth = 0, s_lastFrameHeight = 0;
+	static std::atomic<bool> s_lastFrameCaptureDone = false;
+
+	void GX2_RequestLastFrameCapture()
+	{
+		s_lastFrameCaptureDone = false;
+		if (!g_renderer)
+		{
+			s_lastFrameCaptureDone = true;
+			return;
+		}
+		g_renderer->RequestScreenshot([](const std::vector<uint8>& rgb, int width, int height, bool mainWindow) -> std::optional<std::string> {
+			if (rgb.size() >= (size_t)width * height * 3 && width > 0 && height > 0)
+			{
+				std::unique_lock _l(s_lastFrameMutex);
+				s_lastFrameRGB = rgb;
+				s_lastFrameWidth = width;
+				s_lastFrameHeight = height;
+				cemuLog_log(LogType::Force, "GX2: captured the last frame ({}x{}) for GX2GetLastFrame", width, height);
+			}
+			s_lastFrameCaptureDone = true;
+			return std::nullopt; // no screenshot notification
+		});
+	}
+
+	bool GX2_IsLastFrameCaptureDone()
+	{
+		return s_lastFrameCaptureDone;
+	}
+
+	// scale the captured frame into the guest's 640x480 RGBA8 surface (black if nothing was captured)
+	static void _GX2FillLastFrame(uint8* dst, uint32 pitchInPixels)
+	{
+		std::unique_lock _l(s_lastFrameMutex);
+		for (uint32 y = 0; y < 480; y++)
+		{
+			uint8* row = dst + (size_t)y * pitchInPixels * 4;
+			for (uint32 x = 0; x < 640; x++)
+			{
+				uint8* px = row + x * 4;
+				if (s_lastFrameRGB.empty())
+				{
+					px[0] = px[1] = px[2] = 0;
+				}
+				else
+				{
+					uint32 sx = x * s_lastFrameWidth / 640;
+					uint32 sy = y * s_lastFrameHeight / 480;
+					const uint8* src = s_lastFrameRGB.data() + ((size_t)sy * s_lastFrameWidth + sx) * 3;
+					px[0] = src[0];
+					px[1] = src[1];
+					px[2] = src[2];
+				}
+				px[3] = 0xFF;
+			}
+		}
+	}
 	uint32 sGX2MainCoreIndex = 0;
 
 	void _test_AddrLib();
@@ -242,6 +306,11 @@ namespace GX2
 		GX2CalcSurfaceSizeAndAlignment(&textureOut->surface);
 
 		textureOut->surface.imagePtr = _lastFrame.GetMPTR();
+		uint32 pitch = (uint32)textureOut->surface.pitch;
+		if (pitch >= 640 && (size_t)pitch * 480 * 4 <= 640 * 480 * 4)
+			_GX2FillLastFrame(_lastFrame.GetPtr(), pitch);
+		else
+			_GX2FillLastFrame(_lastFrame.GetPtr(), 640);
 
 		GX2InitTextureRegs(textureOut);
 

@@ -39,3 +39,10 @@ namespace GX2
 };
 
 ENABLE_BITMASK_OPERATORS(GX2::GX2InvalidationFlag);
+
+namespace GX2
+{
+	// capture the TV image for GX2GetLastFrame of the next title (asynchronous, done on the next presented frame)
+	void GX2_RequestLastFrameCapture();
+	bool GX2_IsLastFrameCaptureDone();
+}

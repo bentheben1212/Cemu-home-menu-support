@@ -664,13 +664,22 @@ namespace sysapp
 			return _SYSFindWiiUMenuTitleId();
 		if (checkedTitleId != 0 && _SYSGetUPIDFromTitleId(checkedTitleId) == pfid && nn::acp::ACPIsTitleLaunchable(checkedTitleId))
 			return checkedTitleId;
+		// applet titles end in 0x0A (e.g. 00050030-1001010A); other titles in the same range (e.g. ...09) map to the
+		// same PFID but are not the applet, so prefer ...0A
+		TitleId fallbackTitleId = 0;
 		for (TitleId titleId : CafeTitleList::GetAllTitleIds())
 		{
 			if (TitleIdParser(titleId).GetType() != TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE)
 				continue;
-			if (_SYSGetUPIDFromTitleId(titleId) == pfid && nn::acp::ACPIsTitleLaunchable(titleId))
+			if (_SYSGetUPIDFromTitleId(titleId) != pfid || !nn::acp::ACPIsTitleLaunchable(titleId))
+				continue;
+			if ((titleId & 0xFF) == 0x0A)
 				return titleId;
+			if (fallbackTitleId == 0)
+				fallbackTitleId = titleId;
 		}
+		if (fallbackTitleId != 0)
+			return fallbackTitleId;
 		if (checkedTitleId != 0 && nn::acp::ACPIsTitleLaunchable(checkedTitleId))
 		{
 			cemuLog_log(LogType::Force, "No installed applet matches PFID {}, using last launch-checked title {:016x} (PFID {})", pfid, checkedTitleId, _SYSGetUPIDFromTitleId(checkedTitleId));

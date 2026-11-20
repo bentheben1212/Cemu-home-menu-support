@@ -1,5 +1,7 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/OS/libs/sysapp/sysapp.h"
+#include "Cafe/HW/Latte/Renderer/Renderer.h"
+#include "Cafe/OS/libs/gx2/GX2_Misc.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MessageQueue.h"
 #include "Cafe/OS/libs/coreinit/coreinit_OSScreen.h"
@@ -8,6 +10,8 @@
 #include "Cafe/Filesystem/fsc.h"
 #include "config/LaunchSettings.h"
 #include <pugixml.hpp>
+
+sint32 _SYSGetUPIDFromTitleId(uint64 titleId); // sysapp.cpp
 
 namespace coreinit
 {
@@ -691,7 +695,9 @@ namespace coreinit
 
 	uint32 OSGetPFID()
 	{
-		return 15; // hardcoded as game
+		// the title's own PFID/UPID: 2 for the Wii U Menu, the applet ID for applets (e.g. 5 for the HOME Menu), 15 for games
+		sint32 pfid = _SYSGetUPIDFromTitleId(CafeSystem::GetForegroundTitleId());
+		return pfid >= 0 ? (uint32)pfid : 15;
 	}
 
 	uint32 OSGetUPID()
@@ -941,6 +947,16 @@ namespace coreinit
 		return (titleId & 0xFFFFFFFFFFFFF0FFull) == 0x0005001010040000ull;
 	}
 
+	// HOME Menu applet 00050030-1001x10A (PFID 5)
+	static bool _IsHomeMenuTitle(uint64 titleId)
+	{
+		return (titleId & 0xFFFFFFFFFFFFF0FFull) == 0x000500301001000Aull;
+	}
+
+	static constexpr sint32 SYS_PFID_HOME_MENU = 5;
+	static std::atomic<bool> s_homeMenuLaunchPending = false;
+	static uint32 s_homeMenuLaunchWaitReads = 0;
+
 	static void _HandleHomeButtonPress(uint32 source)
 	{
 		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
@@ -949,9 +965,17 @@ namespace coreinit
 			cemuLog_log(LogType::Force, "HOME button: pressed while the title is already closing, ignored");
 			return;
 		}
+		if (_IsHomeMenuTitle(currentTitleId))
+			return; // the HOME Menu handles HOME itself (closes)
+		if (s_homeMenuLaunchPending)
+			return;
 		if (_IsWiiUMenuTitle(currentTitleId))
 		{
-			cemuLog_log(LogType::Force, "HOME button: pressed on the Wii U Menu, ignored (the HOME Menu is not implemented yet)");
+			// open the HOME Menu over the Wii U Menu. Capture the current frame first, the HOME Menu shows it behind itself
+			cemuLog_log(LogType::Force, "HOME button: opening the HOME Menu over the Wii U Menu");
+			GX2::GX2_RequestLastFrameCapture();
+			s_homeMenuLaunchWaitReads = 0;
+			s_homeMenuLaunchPending = true;
 			return;
 		}
 		if (!g_homeButtonMenuEnabled)
@@ -995,6 +1019,23 @@ namespace coreinit
 	{
 		if (source >= std::size(s_homeButtonDown))
 			return;
+		if (s_homeMenuLaunchPending)
+		{
+			// wait until the frame capture is done (the renderer takes it on the next presented frame), at most ~30 input reads
+			s_homeMenuLaunchWaitReads++;
+			if (GX2::GX2_IsLastFrameCaptureDone() || s_homeMenuLaunchWaitReads > 30)
+			{
+				s_homeMenuLaunchPending = false;
+				if (!GX2::GX2_IsLastFrameCaptureDone())
+				{
+					g_renderer->CancelScreenshotRequest();
+					cemuLog_log(LogType::Force, "HOME button: last frame capture timed out, the HOME Menu background will be black");
+				}
+				if (sysapp::SwitchToPFID(SYS_PFID_HOME_MENU, "HOME button") != 0)
+					cemuLog_log(LogType::Force, "HOME button: the HOME Menu (00050030-1001x10A) is not installed");
+				return; // on success the switch suspends this thread
+			}
+		}
 		bool wasDown = s_homeButtonDown[source];
 		s_homeButtonDown[source] = isDown;
 		if (isDown && !wasDown)
@@ -1174,6 +1215,7 @@ namespace coreinit
 		s_releaseForShutdownPending = false;
 		s_exitMessagePending = false;
 		s_homeCloseInProgress = false;
+		s_homeMenuLaunchPending = false;
 		for (auto& it : s_homeButtonDown)
 			it = false;
 		// the HOME Menu is available unless the title disables it (OSEnableHomeButtonMenu)
