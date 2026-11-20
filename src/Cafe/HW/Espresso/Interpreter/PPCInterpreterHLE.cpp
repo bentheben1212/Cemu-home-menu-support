@@ -240,6 +240,16 @@ static void _ThreadTraceLogCall(std::string_view name, uint32 r3, uint32 r4, uin
 		cemuLog_log(LogType::Force, "Thread trace call: line limit reached, no more calls are logged");
 }
 
+// called when the traced thread is found (again, e.g. in the next title): fresh line budget and call history
+void PPCInterpreter_resetThreadTraceCalls()
+{
+	s_threadTraceCalls.seenCalls.clear();
+	s_threadTraceCalls.intervalCounts.clear();
+	s_threadTraceCalls.intervalCalls = 0;
+	s_threadTraceCalls.intervalStartNs = 0;
+	s_threadTraceCalls.linesLeft = 20000;
+}
+
 void PPCInterpreter_traceThreadUnsupportedCall(PPCInterpreter_t* hCPU, const char* libFuncName)
 {
 	if (coreinit::__OSIsTracedThreadRunning())

@@ -1072,9 +1072,17 @@ namespace coreinit
 		return 0;
 	}
 
-	// returns true if the release was part of the HOME Menu handshake and has been handled
+	// returns true if the release was part of the HOME Menu handshake and has been handled. Only the final release
+	// (OSReleaseForeground, called by ProcUI's core threads once the release is complete) counts: answering the earlier
+	// OSSavesDone_ReadyToRelease (called from within ProcUIProcessMessages, before ProcUI started its background thread)
+	// delivered AcquireForeground in the middle of the release and left ProcUI stuck
 	static bool _OnHomeMenuForegroundReleased(const char* source)
 	{
+		if (strcmp(source, "OSReleaseForeground") != 0)
+		{
+			HomeMenuState state = s_homeMenuState;
+			return state == HomeMenuState::StartupHandshake || state == HomeMenuState::Returning; // wait for OSReleaseForeground
+		}
 		HomeMenuState expected = HomeMenuState::StartupHandshake;
 		if (s_homeMenuState.compare_exchange_strong(expected, HomeMenuState::Foreground))
 		{

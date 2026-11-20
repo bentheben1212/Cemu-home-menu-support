@@ -46,6 +46,8 @@ std::vector<OSThread_t*> s_activeThreads;
 
 void nnNfp_update();
 
+void PPCInterpreter_resetThreadTraceCalls(); // PPCInterpreterHLE.cpp
+
 namespace coreinit
 {
 #ifdef __arm64__
@@ -787,6 +789,7 @@ namespace coreinit
 		if (!name || strcmp(name, wanted) != 0)
 			return false;
 		// first sighting of the thread
+		PPCInterpreter_resetThreadTraceCalls();
 		s_threadTrace = {};
 		s_threadTrace.thread = thread;
 		s_threadTrace.intervalStartNs = _TraceNowNs();
