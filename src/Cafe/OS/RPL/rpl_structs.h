@@ -232,6 +232,7 @@ struct RPLDependency
 	bool isCafeOSModule{false}; // name is a known Cafe OS system RPL
 	RPLModule* rplLoaderContext{}; // context of loaded module, can be nullptr for HLE COS modules
 	class COSModule* rplHLEModule{}; // set if this is a HLE module
+	bool loadFromFirmware{false}; // load the real system RPL from the firmware (system libraries title) instead of HLE
 	sint32 referenceCount;
 	uint32 coreinitHandle; // fake handle for coreinit
 	sint16 tlsModuleIndex; // tls module index assigned to this dependency

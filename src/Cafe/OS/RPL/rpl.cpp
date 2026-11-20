@@ -12,6 +12,7 @@
 
 #include "util/crypto/crc32.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/Filesystem/FST/FST.h"
 #include "Cafe/OS/libs/coreinit/coreinit_DynLoad.h"
 #include "COSModule.h"
 
@@ -1941,6 +1942,119 @@ bool RPLLoader_CanUseNativeErrEula()
 	return hasErrEulaPack;
 }
 
+/* Real system libraries from the firmware
+
+   The Wii U keeps its system RPLs (erreula.rpl, swkbd.rpl, ...) in the system libraries title 00050010-1000400A on the
+   SLC, so an MLC dump doesn't include them. They can be provided as that title, either extracted (code/<name>.rpl) or in
+   NUS format (title.tmd, .app files, title.tik), placed in mlc01/sys/title/00050010/1000400A or in a folder named by
+   CEMU_SYSTEM_TITLES_PATH (the title folder itself, or a folder containing it as 1000400A, 00050010/1000400A or
+   sys/title/00050010/1000400A). NUS titles are decrypted on the fly */
+
+static std::optional<fs::path> _RPLFindChildCaseInsensitive(const fs::path& dir, std::string_view name)
+{
+	std::error_code ec;
+	if (!fs::is_directory(dir, ec))
+		return std::nullopt;
+	for (auto& entry : fs::directory_iterator(dir, ec))
+	{
+		if (boost::iequals(_pathToUtf8(entry.path().filename()), name))
+			return entry.path();
+	}
+	return std::nullopt;
+}
+
+static std::vector<fs::path> _RPLGetSystemLibraryTitleCandidates()
+{
+	std::vector<fs::path> candidates;
+	auto addTitleFolder = [&](const fs::path& base, std::initializer_list<std::string_view> components) {
+		fs::path p = base;
+		for (auto c : components)
+		{
+			auto child = _RPLFindChildCaseInsensitive(p, c);
+			if (!child)
+				return;
+			p = *child;
+		}
+		candidates.emplace_back(p);
+	};
+	addTitleFolder(ActiveSettings::GetMlcPath(), { "sys", "title", "00050010", "1000400a" });
+	if (const char* custom = getenv("CEMU_SYSTEM_TITLES_PATH"); custom && *custom)
+	{
+		fs::path base = _utf8ToPath(custom);
+		candidates.emplace_back(base);
+		addTitleFolder(base, { "1000400a" });
+		addTitleFolder(base, { "00050010", "1000400a" });
+		addTitleFolder(base, { "sys", "title", "00050010", "1000400a" });
+	}
+	return candidates;
+}
+
+// returns the data of <fileName> (e.g. "erreula.rpl") from the firmware's system libraries title, if available
+static std::optional<std::vector<uint8>> RPLLoader_GetFirmwareLibrary(std::string_view fileName)
+{
+	static std::mutex s_mutex;
+	static std::map<fs::path, std::unique_ptr<FSTVolume>> s_nusVolumes; // opened (decrypted) NUS titles
+	std::unique_lock _l(s_mutex);
+	for (const fs::path& titleFolder : _RPLGetSystemLibraryTitleCandidates())
+	{
+		// extracted title: <title>/code/<file>
+		if (auto codeDir = _RPLFindChildCaseInsensitive(titleFolder, "code"))
+		{
+			if (auto file = _RPLFindChildCaseInsensitive(*codeDir, fileName))
+			{
+				auto data = FileStream::LoadIntoMemory(*file);
+				if (data)
+				{
+					cemuLog_log(LogType::Force, "RPLLoader: using {} from the firmware ({})", fileName, _pathToUtf8(*file));
+					return data;
+				}
+			}
+		}
+		// NUS title: <title>/title.tmd + .app files
+		if (_RPLFindChildCaseInsensitive(titleFolder, "title.tmd"))
+		{
+			auto it = s_nusVolumes.find(titleFolder);
+			if (it == s_nusVolumes.end())
+			{
+				FSTVolume::ErrorCode err = FSTVolume::ErrorCode::OK;
+				FSTVolume* volume = FSTVolume::OpenFromContentFolder(titleFolder, &err);
+				if (!volume)
+					cemuLog_log(LogType::Force, "RPLLoader: cannot open system libraries title {} (NUS, error {}{})", _pathToUtf8(titleFolder), (int)err,
+						err == FSTVolume::ErrorCode::TITLE_TIK_MISSING ? ", title.tik missing" : "");
+				it = s_nusVolumes.emplace(titleFolder, std::unique_ptr<FSTVolume>(volume)).first;
+			}
+			if (it->second)
+			{
+				bool success = false;
+				std::vector<uint8> data = it->second->ExtractFile(fmt::format("code/{}", fileName), &success);
+				if (success && !data.empty())
+				{
+					cemuLog_log(LogType::Force, "RPLLoader: using {} from the firmware (NUS title {})", fileName, _pathToUtf8(titleFolder));
+					return data;
+				}
+			}
+		}
+	}
+	return std::nullopt;
+}
+
+// CEMU_ERREULA=auto (default): real erreula.rpl when the firmware provides it and its resources (erreula.pack) exist,
+// otherwise Cemu's HLE implementation. native: always try the real library. hle: always use Cemu's implementation
+enum class RPLLibraryMode { Auto, Native, HLE };
+
+static RPLLibraryMode _RPLGetErrEulaMode()
+{
+	static const RPLLibraryMode s_mode = []() {
+		const char* v = getenv("CEMU_ERREULA");
+		if (v && boost::iequals(v, "native"))
+			return RPLLibraryMode::Native;
+		if (v && boost::iequals(v, "hle"))
+			return RPLLibraryMode::HLE;
+		return RPLLibraryMode::Auto;
+	}();
+	return s_mode;
+}
+
 // increment reference counter for module
 void RPLLoader_AddDependency(std::string_view name, bool isMainExecutable)
 {
@@ -1987,9 +2101,34 @@ void RPLLoader_AddDependency(std::string_view name, bool isMainExecutable)
 		if (newDependency->moduleName == "erreula" && !RPLLoader_CanUseNativeErrEula())
 			isBlacklisted = true;
 	}
+	if (newDependency->moduleName == "erreula")
+	{
+		// real error viewer: cafeLibs/ (above) or the firmware's system libraries title
+		RPLLibraryMode mode = _RPLGetErrEulaMode();
+		if (mode == RPLLibraryMode::HLE)
+		{
+			rplExistsInCafeLibs = false;
+			cemuLog_log(LogType::Force, "erreula: using Cemu's implementation (CEMU_ERREULA=hle)");
+		}
+		else if (rplExistsInCafeLibs && mode == RPLLibraryMode::Native)
+			isBlacklisted = false;
+		else if (!rplExistsInCafeLibs)
+		{
+			bool hasResources = RPLLoader_CanUseNativeErrEula();
+			if (!hasResources && mode == RPLLibraryMode::Auto)
+				cemuLog_log(LogType::Force, "erreula: using Cemu's implementation (erreula.pack from title 0005001b-10051000 not found in mlc01)");
+			else if (RPLLoader_GetFirmwareLibrary("erreula.rpl"))
+			{
+				newDependency->loadFromFirmware = true;
+				cemuLog_log(LogType::Force, "erreula: using the real erreula.rpl from the firmware{}", hasResources ? "" : " (erreula.pack missing, CEMU_ERREULA=native)");
+			}
+			else
+				cemuLog_log(LogType::Force, "erreula: using Cemu's implementation (no erreula.rpl in cafeLibs/ or the system libraries title 00050010-1000400A)");
+		}
+	}
 	if (isBlacklisted)
 		cemuLog_log(LogType::Force, "Game tried to load {}.rpl from cafeLibs/ but the necessary MLC data files are not present. Using Cemu's implementation instead", moduleName);
-	if (!rplExistsInCafeLibs || isBlacklisted)
+	if ((!rplExistsInCafeLibs || isBlacklisted) && !newDependency->loadFromFirmware)
 		newDependency->rplHLEModule = RPLLoader_GetHLECafeOSModule(moduleName);
 	s_rplDependencyList.push_back(newDependency);
 }
@@ -2155,6 +2294,16 @@ void RPLLoader_LoadDependency(RPLDependency* dependency)
 			dependency->rplLoaderContext = RPLLoader_LoadFromMemory(fileData->data(), fileData->size(), rplFilename);
 			return;
 		}
+	}
+	// real system library from the firmware
+	if (dependency->loadFromFirmware)
+	{
+		if (auto fileData = RPLLoader_GetFirmwareLibrary(rplFilename))
+		{
+			dependency->rplLoaderContext = RPLLoader_LoadFromMemory(fileData->data(), fileData->size(), rplFilename);
+			return;
+		}
+		cemuLog_log(LogType::Force, "RPLLoader: {} from the firmware could not be read", rplFilename);
 	}
 	// attempt to load rpl from code directory of current title
 	std::string rplPath = "/internal/current_title/code/";
