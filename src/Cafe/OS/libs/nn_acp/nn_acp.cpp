@@ -18,6 +18,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/IOSU/legacy/iosu_mcp.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 
 using ACPDeviceType = iosu::acp::ACPDeviceType;
 
@@ -271,21 +272,39 @@ namespace acp
 		osLib_returnFromFunction(hCPU, acpRequest->returnCode);
 	}
 
+	static uint64 _GetMainApplicationTitleId()
+	{
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		if (((currentTitleId >> 32) & 0xFF) != 0x30)
+			return currentTitleId;
+		// applets (incl. the HOME Menu): the main application they were launched over
+		uint64 mainAppTitleId = coreinit::__OSGetMainAppTitleId();
+		if (mainAppTitleId != 0)
+			return mainAppTitleId;
+		return _SYSGetSystemApplicationTitleId(0); // Wii U Menu
+	}
+
 	void export_ACPGetTitleIdOfMainApplication(PPCInterpreter_t* hCPU)
 	{
 		ppcDefineParamTypePtr(titleId, uint64be, 0);
+		*titleId = _GetMainApplicationTitleId();
+		osLib_returnFromFunction(hCPU, 0);
+	}
 
-		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
-		*titleId = currentTitleId;
-
-		// for applets we return the menu titleId
-		if (((currentTitleId >> 32) & 0xFF) == 0x30)
-		{
-			// get menu titleId
-			uint64 menuTitleId = _SYSGetSystemApplicationTitleId(0);
-			*titleId = menuTitleId;
-		}
-
+	// used by the HOME Menu. Three output pointers: title id, then two words (assumed: device type, unknown)
+	void export_ACPGetTitleInfoOfMainApplication(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamTypePtr(titleId, uint64be, 0);
+		ppcDefineParamTypePtr(outUkn1, uint32be, 1);
+		ppcDefineParamTypePtr(outUkn2, uint32be, 2);
+		uint64 mainTitleId = _GetMainApplicationTitleId();
+		if (titleId)
+			*titleId = mainTitleId;
+		if (outUkn1)
+			*outUkn1 = 1; // device type, the HOME Menu passes 1 for titles on internal storage
+		if (outUkn2)
+			*outUkn2 = 0;
+		cemuLog_log(LogType::Force, "ACPGetTitleInfoOfMainApplication -> {:016x} (out 0x{:08x} 0x{:08x} 0x{:08x})", mainTitleId, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5]);
 		osLib_returnFromFunction(hCPU, 0);
 	}
 
@@ -297,7 +316,7 @@ namespace acp
 		ppcDefineParamU32(deviceId, 4);
 
 		if (deviceId != 3)
-			assert_dbg();
+			cemuLog_logOnce(LogType::Force, "ACPGetTitleMetaDirByDevice: deviceId {} treated as internal storage", deviceId);
 
 		if (((titleId >> 32) & 0xFF) == 0x10 || ((titleId >> 32) & 0xFF) == 0x30)
 		{
@@ -400,6 +419,7 @@ namespace acp
 			osLib_addFunction("nn_acp", "ACPGetLaunchMetaData", export_ACPGetLaunchMetaData);
 			osLib_addFunction("nn_acp", "ACPGetLaunchMetaXml", export_ACPGetLaunchMetaXml);
 			osLib_addFunction("nn_acp", "ACPGetTitleIdOfMainApplication", export_ACPGetTitleIdOfMainApplication);
+			osLib_addFunction("nn_acp", "ACPGetTitleInfoOfMainApplication", export_ACPGetTitleInfoOfMainApplication);
 
 			osLib_addFunction("nn_acp", "ACPGetTitleMetaDirByDevice", export_ACPGetTitleMetaDirByDevice);
 			osLib_addFunction("nn_acp", "ACPGetTitleMetaXmlByDevice", export_ACPGetTitleMetaXmlByDevice);
