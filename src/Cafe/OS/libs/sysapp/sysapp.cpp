@@ -792,12 +792,17 @@ namespace sysapp
 		return 0;
 	}
 
-	// Switches to the HOME Menu overlay. Cemu has no HOME Menu overlay: applets (e.g. Friend List after an error)
-	// use this to give control back, so return to the main app like _SYSSwitchToMainApp does
 	// called by the HOME Menu when an applet in its bottom row is tapped. Arguments not documented: the first one is assumed to be the PFID
 	uint32 _SYSSwitchToOverlayFromHBM(uint32 arg0, uint32 arg1, uint32 arg2)
 	{
 		cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM(0x{:08x}, 0x{:08x}, 0x{:08x}) (LR 0x{:08x})", arg0, arg1, arg2, PPCInterpreter_getCurrentInstance()->spr.LR);
+		if (arg0 == 0xFFFFFFFF)
+		{
+			// HOME Menu closed (Close / B / HOME): no applet, go back to the main app
+			cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM: closing the HOME Menu, returning to the main app");
+			coreinit::__OSClearCopyData();
+			return _SYSSwitchToMainApp();
+		}
 		if (arg0 == 0 || arg0 >= 32)
 		{
 			cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM: first argument is not a PFID, ignored");
@@ -813,6 +818,8 @@ namespace sysapp
 		return _SYSSwitchToTitle("_SYSSwitchToOverlayFromHBM", titleId);
 	}
 
+	// Switches to the HOME Menu overlay. Cemu has no HOME Menu overlay: applets (e.g. Friend List after an error)
+	// use this to give control back, so return to the main app like _SYSSwitchToMainApp does
 	uint32 _SYSSwitchToHBMWithMode(uint32 mode)
 	{
 		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
