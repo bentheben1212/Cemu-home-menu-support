@@ -1046,8 +1046,63 @@ namespace coreinit
 	}
 
 	// called once the app is done with its foreground release
+	/* HOME Menu foreground handshake
+	   On a console the HOME Menu runs in the background from boot: after initializing it asks the system to switch to
+	   the app (OSSendAppSwitchRequest) and releases the foreground, and the system brings it to the foreground when HOME
+	   is pressed. Cemu launches it on the HOME press instead, so the first release is answered with AcquireForeground
+	   right away. A later switch request + release means the HOME Menu is done: Cemu runs one title at a time, so this
+	   becomes a title switch back to the main app (the Wii U Menu) */
+	enum class HomeMenuState : uint32 { None, Starting, StartupHandshake, Foreground, Returning };
+	static std::atomic<HomeMenuState> s_homeMenuState = HomeMenuState::None;
+
+	uint32 OSSendAppSwitchRequest(uint32 rampid, void* args, uint32 argsSize)
+	{
+		cemuLog_log(LogType::Force, "OSSendAppSwitchRequest(rampid {}, args 0x{:08x}, size 0x{:x}) (LR 0x{:08x})", rampid, MEMPTR<void>(args).GetMPTR(), argsSize, PPCInterpreter_getCurrentInstance()->spr.LR);
+		HomeMenuState state = s_homeMenuState;
+		if (state == HomeMenuState::Starting)
+		{
+			s_homeMenuState = HomeMenuState::StartupHandshake;
+			cemuLog_log(LogType::Force, "HOME Menu: startup handshake, bringing it to the foreground once it released the foreground");
+		}
+		else if (state == HomeMenuState::Foreground)
+		{
+			s_homeMenuState = HomeMenuState::Returning;
+			cemuLog_log(LogType::Force, "HOME Menu: switch request while in the foreground, returning to the main app once it released the foreground");
+		}
+		return 0;
+	}
+
+	// returns true if the release was part of the HOME Menu handshake and has been handled
+	static bool _OnHomeMenuForegroundReleased(const char* source)
+	{
+		HomeMenuState expected = HomeMenuState::StartupHandshake;
+		if (s_homeMenuState.compare_exchange_strong(expected, HomeMenuState::Foreground))
+		{
+			cemuLog_log(LogType::Force, "HOME Menu: {} during startup, sending AcquireForeground", source);
+			OSMessage msg{};
+			msg.data0 = stdx::to_underlying(SysMessageId::MsgAcquireForeground);
+			msg.data1 = 1;
+			msg.data2 = 1;
+			if (!OSSendMessage(coreinit::OSGetSystemMessageQueue(), &msg, 0))
+				s_transitionToForeground = true; // queue full, retry in UpdateSystemMessageQueue
+			return true;
+		}
+		expected = HomeMenuState::Returning;
+		if (s_homeMenuState.compare_exchange_strong(expected, HomeMenuState::None))
+		{
+			uint64 targetTitleId = s_mainAppTitleId != 0 ? s_mainAppTitleId : sysapp::GetWiiUMenuTitleId();
+			cemuLog_log(LogType::Force, "HOME Menu: {}, returning to {:016x}", source, targetTitleId);
+			if (targetTitleId != 0)
+				__LaunchByTitleId(targetTitleId, 0, nullptr); // suspends this thread
+			return true;
+		}
+		return false;
+	}
+
 	static void _OnForegroundReleased(const char* source)
 	{
+		if (_OnHomeMenuForegroundReleased(source))
+			return;
 		if (!s_exitRequested.exchange(false)) // send Exit only once even if both release paths fire
 			return;
 		cemuLog_log(LogType::Force, "System: {} after exit request, sending Exit message", source);
@@ -1216,6 +1271,7 @@ namespace coreinit
 		s_exitMessagePending = false;
 		s_homeCloseInProgress = false;
 		s_homeMenuLaunchPending = false;
+		s_homeMenuState = _IsHomeMenuTitle(s_currentTitleId) ? HomeMenuState::Starting : HomeMenuState::None;
 		for (auto& it : s_homeButtonDown)
 			it = false;
 		// the HOME Menu is available unless the title disables it (OSEnableHomeButtonMenu)
@@ -1239,6 +1295,7 @@ namespace coreinit
 		g_homeButtonMenuEnabled = true; // enabled by default
 		// Disney Infinity 2.0 actually relies on home button menu being enabled by default. If it's false it will crash due to calling erreula->IsAppearHomeNixSign() before initializing erreula
 		cafeExportRegister("coreinit", OSIsHomeButtonMenuEnabled, LogType::CoreinitThread);
+		cafeExportRegister("coreinit", OSSendAppSwitchRequest, LogType::CoreinitThread);
 		cafeExportRegister("coreinit", OSEnableHomeButtonMenu, LogType::CoreinitThread);
 
 		cafeExportRegister("coreinit", OSLaunchTitleByPathl, LogType::Placeholder);
