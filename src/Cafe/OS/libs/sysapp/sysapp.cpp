@@ -794,6 +794,25 @@ namespace sysapp
 
 	// Switches to the HOME Menu overlay. Cemu has no HOME Menu overlay: applets (e.g. Friend List after an error)
 	// use this to give control back, so return to the main app like _SYSSwitchToMainApp does
+	// called by the HOME Menu when an applet in its bottom row is tapped. Arguments not documented: the first one is assumed to be the PFID
+	uint32 _SYSSwitchToOverlayFromHBM(uint32 arg0, uint32 arg1, uint32 arg2)
+	{
+		cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM(0x{:08x}, 0x{:08x}, 0x{:08x}) (LR 0x{:08x})", arg0, arg1, arg2, PPCInterpreter_getCurrentInstance()->spr.LR);
+		if (arg0 == 0 || arg0 >= 32)
+		{
+			cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM: first argument is not a PFID, ignored");
+			return 0;
+		}
+		uint64 titleId = _SYSResolvePFIDToTitleId((sint32)arg0);
+		if (titleId == 0)
+		{
+			cemuLog_log(LogType::Force, "_SYSSwitchToOverlayFromHBM: no title installed for PFID {}", arg0);
+			return 0;
+		}
+		coreinit::__OSClearCopyData();
+		return _SYSSwitchToTitle("_SYSSwitchToOverlayFromHBM", titleId);
+	}
+
 	uint32 _SYSSwitchToHBMWithMode(uint32 mode)
 	{
 		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
@@ -869,6 +888,7 @@ namespace sysapp
 		cafeExportRegister("sysapp", _SYSSwitchToMainApp, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSGetStandardArgs, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToHBMWithMode, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchToOverlayFromHBM, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchTo, LogType::Placeholder);
 		osLib_addFunction("sysapp", "_SYSLaunchNotificationsDirect", export__SYSLaunchNotificationsDirect);
 		cafeExportRegister("sysapp", SYSGetCallerTitleId, LogType::Placeholder);
