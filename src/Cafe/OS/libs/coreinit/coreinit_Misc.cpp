@@ -1145,6 +1145,14 @@ namespace coreinit
 		__ExitProcessOrSwitch(status);
 	}
 
+	// __PPCExit called by the title itself (some titles end the process with it instead of exit/_Exit, e.g. New Super
+	// Mario Bros. U after its Exit message). Like exit/_Exit it performs a queued title switch instead of ending emulation
+	void coreinit___PPCExit(sint32 status)
+	{
+		cemuLog_log(LogType::Force, "The title terminated the process by calling coreinit.__PPCExit({})", (sint32)status);
+		__ExitProcessOrSwitch(status);
+	}
+
 	void miscInit()
 	{
 		s_currentTitleId = CafeSystem::GetForegroundTitleId();
@@ -1204,7 +1212,7 @@ namespace coreinit
 
 		cafeExportRegisterFunc(coreinit_exit, "coreinit", "exit", LogType::CoreinitThread);
 		cafeExportRegisterFunc(coreinit__Exit, "coreinit", "_Exit", LogType::CoreinitThread);
-		cafeExportRegister("coreinit", __PPCExit, LogType::CoreinitThread);
+		cafeExportRegisterFunc(coreinit___PPCExit, "coreinit", "__PPCExit", LogType::CoreinitThread);
 	}
 
 };
