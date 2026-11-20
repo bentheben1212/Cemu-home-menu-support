@@ -152,9 +152,17 @@ namespace coreinit
 		if (!s_tracedMessageQueues.empty() && s_tracedMessageQueues.count(msgQueue)) [[unlikely]]
 		{
 			std::string sender = _MsgTraceCurrentThreadName();
-			cemuLog_log(LogType::Force, "Thread trace: {} sends message {:08x} {:08x} {:08x} {:08x} to queue {:08x} (LR 0x{:08x}, receiver waiting: {})",
+			static std::map<OSMessageQueue*, uint32> s_sendLinesPerQueue; // some queues get many messages per second
+			uint32& sendLines = s_sendLinesPerQueue[msgQueue];
+			if (sendLines < 200)
+			{
+				sendLines++;
+				cemuLog_log(LogType::Force, "Thread trace: {} sends message {:08x} {:08x} {:08x} {:08x} to queue {:08x} (LR 0x{:08x}, receiver waiting: {})",
 				sender, (uint32)msg->message, (uint32)msg->data0, (uint32)msg->data1, (uint32)msg->data2, MEMPTR<OSMessageQueue>(msgQueue).GetMPTR(),
 				PPCInterpreter_getCurrentInstance() ? PPCInterpreter_getCurrentInstance()->spr.LR : 0, msgQueue->threadQueueReceive.isEmpty() ? "no" : "yes");
+				if (sendLines == 200)
+					cemuLog_log(LogType::Force, "Thread trace: 200 sends to queue {:08x} logged, no more are logged for it", MEMPTR<OSMessageQueue>(msgQueue).GetMPTR());
+			}
 			auto& senders = s_tracedQueueSenders[msgQueue];
 			if ((flags & OS_MESSAGE_HIGH_PRIORITY))
 				senders.emplace_front(_MsgTraceNowNs(), sender);

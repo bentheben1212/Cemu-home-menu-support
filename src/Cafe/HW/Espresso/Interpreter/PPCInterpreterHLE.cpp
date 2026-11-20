@@ -187,13 +187,15 @@ namespace coreinit
 	bool __OSIsTracedThreadRunning(); // CEMU_TRACE_THREAD, coreinit_Thread.cpp
 }
 
-// CEMU_TRACE_THREAD: every OS call of the traced thread, with how long it took (a long call = the thread was blocked).
-// Consecutive quick repeats of the same call are collapsed
+// CEMU_TRACE_THREAD: OS calls of the traced thread. Busy threads (like a title's main thread) make thousands of calls per
+// second, so each distinct call (function + caller) is logged only the first time it is seen, calls that take 2 ms or
+// longer (the thread was blocked) are always logged, and once per second the most frequent calls are summarized
 static struct
 {
-	std::string lastName;
-	uint32 lastLR{};
-	uint32 repeats{};
+	std::unordered_set<std::string> seenCalls; // "name@LR"
+	std::unordered_map<std::string, uint32> intervalCounts;
+	uint32 intervalCalls{};
+	sint64 intervalStartNs{};
 	uint32 linesLeft{20000};
 }s_threadTraceCalls;
 
@@ -202,28 +204,38 @@ static sint64 _ThreadTraceNowNs()
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
-static void _ThreadTraceFlushRepeats()
-{
-	if (s_threadTraceCalls.repeats > 0)
-		cemuLog_log(LogType::Force, "Thread trace call:   (previous call repeated {} more times)", s_threadTraceCalls.repeats);
-	s_threadTraceCalls.repeats = 0;
-}
-
 static void _ThreadTraceLogCall(std::string_view name, uint32 r3, uint32 r4, uint32 r5, uint32 r6, uint32 lr, uint32 result, sint64 durationNs, bool unsupported)
 {
+	sint64 now = _ThreadTraceNowNs();
+	// per second summary
+	if (s_threadTraceCalls.intervalStartNs == 0)
+		s_threadTraceCalls.intervalStartNs = now;
+	s_threadTraceCalls.intervalCalls++;
+	s_threadTraceCalls.intervalCounts[std::string(name)]++;
+	if (now - s_threadTraceCalls.intervalStartNs >= 1000000000ll)
+	{
+		std::vector<std::pair<uint32, std::string_view>> sorted;
+		for (auto& it : s_threadTraceCalls.intervalCounts)
+			sorted.emplace_back(it.second, it.first);
+		std::sort(sorted.begin(), sorted.end(), [](auto& a, auto& b) { return a.first > b.first; });
+		std::string top;
+		for (size_t i = 0; i < sorted.size() && i < 8; i++)
+			top.append(fmt::format("{}{} x{}", i ? ", " : "", sorted[i].second, sorted[i].first));
+		cemuLog_log(LogType::Force, "Thread trace calls: last {:.2f}s: {} calls to {} functions; most: {}", (now - s_threadTraceCalls.intervalStartNs) / 1e9, s_threadTraceCalls.intervalCalls, s_threadTraceCalls.intervalCounts.size(), top);
+		s_threadTraceCalls.intervalCounts.clear();
+		s_threadTraceCalls.intervalCalls = 0;
+		s_threadTraceCalls.intervalStartNs = now;
+	}
+	// individual calls: new (function, caller) combinations, unsupported calls and slow calls
+	bool isNew = s_threadTraceCalls.seenCalls.emplace(fmt::format("{}@{:08x}", name, lr)).second;
+	bool isSlow = durationNs >= 2000000;
+	if (!isNew && !isSlow && !unsupported)
+		return;
 	if (s_threadTraceCalls.linesLeft == 0)
 		return;
-	if (!unsupported && durationNs < 1000000 && s_threadTraceCalls.lastName == name && s_threadTraceCalls.lastLR == lr)
-	{
-		s_threadTraceCalls.repeats++;
-		return;
-	}
-	_ThreadTraceFlushRepeats();
-	s_threadTraceCalls.lastName = name;
-	s_threadTraceCalls.lastLR = lr;
 	s_threadTraceCalls.linesLeft--;
-	cemuLog_log(LogType::Force, "Thread trace call: {}{} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> 0x{:08x} [{:.3f} ms]",
-		name, unsupported ? " UNSUPPORTED" : "", r3, r4, r5, r6, lr, result, durationNs / 1e6);
+	cemuLog_log(LogType::Force, "Thread trace call: {}{}{} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> 0x{:08x} [{:.3f} ms]",
+		isNew ? "NEW " : "", name, unsupported ? " UNSUPPORTED" : "", r3, r4, r5, r6, lr, result, durationNs / 1e6);
 	if (s_threadTraceCalls.linesLeft == 0)
 		cemuLog_log(LogType::Force, "Thread trace call: line limit reached, no more calls are logged");
 }
