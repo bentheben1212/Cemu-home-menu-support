@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
+#include "Cafe/HW/Latte/Core/LatteTextureWriteTracking.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
 
@@ -215,6 +216,137 @@ uint32 LatteTexture_CalculateTextureDataHash(LatteTexture* hostTexture)
 	return hashVal;
 }
 
+
+/* CPU write tracking for textures (see LatteTextureWriteTracking.h) */
+
+namespace
+{
+	constexpr uint32 WT_PAGE_SHIFT = 12; // 4KB pages
+	constexpr uint32 WT_PAGE_COUNT = 1u << (32 - WT_PAGE_SHIFT);
+
+	// number of registered textures fully covering each page; writes to pages without textures are ignored cheaply
+	std::unique_ptr<std::atomic<uint16>[]> s_wtPageTextureCount;
+	// sequence number of the last tracked write to each page
+	std::unique_ptr<std::atomic<uint32>[]> s_wtPageWriteSeq;
+	std::atomic<uint32> s_wtWriteSeq{1};
+	std::once_flag s_wtInitFlag;
+
+	// statistics for the current title
+	std::atomic<uint64> s_wtTrackedWrites{0};
+	uint64 s_wtExtraReloads{0};
+	uint32 s_wtLoggedExamples{0};
+
+	void _WTInit()
+	{
+		std::call_once(s_wtInitFlag, []() {
+			s_wtPageTextureCount.reset(new std::atomic<uint16>[WT_PAGE_COUNT]());
+			s_wtPageWriteSeq.reset(new std::atomic<uint32>[WT_PAGE_COUNT]());
+		});
+	}
+}
+
+bool LatteTextureWriteTracking_IsEnabled()
+{
+	static const bool s_enabled = []() {
+		const char* v = getenv("CEMU_TEXTURE_WRITE_TRACKING");
+		bool enabled = !(v && strcmp(v, "0") == 0);
+		cemuLog_log(LogType::Force, "Texture write tracking: {}", enabled ? "enabled" : "disabled (CEMU_TEXTURE_WRITE_TRACKING=0)");
+		return enabled;
+	}();
+	return s_enabled;
+}
+
+void LatteTextureWriteTracking_NotifyWrite(uint32 physAddr, uint32 size)
+{
+	if (size == 0 || !s_wtPageTextureCount)
+		return;
+	uint32 pageFirst = physAddr >> WT_PAGE_SHIFT;
+	uint32 pageLast = (uint32)(((uint64)physAddr + size - 1) >> WT_PAGE_SHIFT);
+	if (pageLast >= WT_PAGE_COUNT)
+		pageLast = WT_PAGE_COUNT - 1;
+	uint32 seq = 0;
+	for (uint32 page = pageFirst; page <= pageLast; page++)
+	{
+		if (s_wtPageTextureCount[page].load(std::memory_order_relaxed) == 0)
+			continue; // no cached texture here, unrelated write
+		if (seq == 0)
+			seq = s_wtWriteSeq.fetch_add(1, std::memory_order_relaxed) + 1;
+		s_wtPageWriteSeq[page].store(seq, std::memory_order_relaxed);
+	}
+	if (seq != 0)
+		s_wtTrackedWrites.fetch_add(1, std::memory_order_relaxed);
+}
+
+void LatteTextureWriteTracking_Unregister(LatteTexture* texture)
+{
+	if (!s_wtPageTextureCount)
+		return;
+	for (uint32 page = texture->writeTrackPageFirst; page < texture->writeTrackPageEnd; page++)
+		s_wtPageTextureCount[page].fetch_sub(1, std::memory_order_relaxed);
+	texture->writeTrackPageFirst = 0;
+	texture->writeTrackPageEnd = 0;
+}
+
+void LatteTextureWriteTracking_Register(LatteTexture* texture)
+{
+	if (!LatteTextureWriteTracking_IsEnabled())
+		return;
+	_WTInit();
+	LatteTextureWriteTracking_Unregister(texture);
+	// only pages fully inside the texture data, so writes to unrelated data sharing the first/last page don't trigger
+	uint32 pageFirst = (texture->texDataPtrLow + (1u << WT_PAGE_SHIFT) - 1) >> WT_PAGE_SHIFT;
+	uint32 pageEnd = texture->texDataPtrHigh >> WT_PAGE_SHIFT;
+	if (texture->texDataPtrHigh <= texture->texDataPtrLow || pageEnd <= pageFirst)
+		return; // too small, the hash check covers it
+	for (uint32 page = pageFirst; page < pageEnd; page++)
+	{
+		if (s_wtPageTextureCount[page].load(std::memory_order_relaxed) != 0xFFFF)
+			s_wtPageTextureCount[page].fetch_add(1, std::memory_order_relaxed);
+	}
+	texture->writeTrackPageFirst = pageFirst;
+	texture->writeTrackPageEnd = pageEnd;
+	texture->writeTrackSeqChecked = s_wtWriteSeq.load(std::memory_order_relaxed); // data was just loaded
+}
+
+bool LatteTextureWriteTracking_ConsumeWrites(LatteTexture* texture)
+{
+	if (texture->writeTrackPageEnd == 0)
+		return false;
+	uint32 seqNow = s_wtWriteSeq.load(std::memory_order_relaxed);
+	uint32 lastChecked = texture->writeTrackSeqChecked;
+	if (seqNow == lastChecked)
+		return false; // no tracked write anywhere since the last check
+	texture->writeTrackSeqChecked = seqNow;
+	for (uint32 page = texture->writeTrackPageFirst; page < texture->writeTrackPageEnd; page++)
+	{
+		uint32 pageSeq = s_wtPageWriteSeq[page].load(std::memory_order_relaxed);
+		if (pageSeq > lastChecked)
+			return true;
+	}
+	return false;
+}
+
+void LatteTextureWriteTracking_CountExtraReload(LatteTexture* texture)
+{
+	s_wtExtraReloads++;
+	if (s_wtLoggedExamples < 5)
+	{
+		s_wtLoggedExamples++;
+		cemuLog_log(LogType::Force, "Texture write tracking: reloading texture 0x{:08x} ({}x{} format 0x{:04x}{}) after a CPU write the change check missed",
+			texture->physAddress, texture->width, texture->height, (uint32)texture->format, texture->useLightHash ? ", light hash" : "");
+	}
+}
+
+void LatteTextureWriteTracking_LogSummaryAndReset()
+{
+	if (!LatteTextureWriteTracking_IsEnabled())
+		return;
+	cemuLog_log(LogType::Force, "Texture write tracking: {} tracked CPU writes to texture memory, {} extra texture reloads", s_wtTrackedWrites.load(), s_wtExtraReloads);
+	s_wtTrackedWrites = 0;
+	s_wtExtraReloads = 0;
+	s_wtLoggedExamples = 0;
+}
+
 uint64 _botwLargeTexHax = 0;
 
 bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
@@ -230,11 +362,18 @@ bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
 	if( hostTexture->lastDataUpdateFrameCounter == LatteGPUState.frameCounter && force == false)
 		return false;
 	hostTexture->lastDataUpdateFrameCounter = LatteGPUState.frameCounter;
+	// a CPU write through an HLE memory function into the texture's memory since the last check
+	bool trackedCpuWrite = LatteTextureWriteTracking_ConsumeWrites(hostTexture);
 	// we assume that certain texture properties indicate that the texture will never be written by the CPU
 	bool isCPUMirroredLinear = hostTexture->tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED && hostTexture->enableReadback;
 	if (hostTexture->width == 1280 && !isCPUMirroredLinear && hostTexture->format != Latte::E_GX2SURFFMT::R8_UNORM && hostTexture->format != Latte::E_GX2SURFFMT::BC3_UNORM && force == false)
 	{
 		// todo - remove this or find a better way to handle excluded texture invalidation checks (maybe via game profile?)
+		if (trackedCpuWrite)
+		{
+			LatteTextureWriteTracking_CountExtraReload(hostTexture);
+			return true;
+		}
 		return false;
 	}
 	// workaround for corrupted terrain texture in BotW after video playback
@@ -252,6 +391,12 @@ bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
 	if (_botwLargeTexHax != 0 && hostTexture->depth == 83 && hostTexture->width == 1024 && hostTexture->height == 1024 && _botwLargeTexHax != LatteGPUState.frameCounter)
 	{
 		_botwLargeTexHax = 0;
+		return true;
+	}
+	if (trackedCpuWrite && !force)
+	{
+		// the sampled hash didn't see this write
+		LatteTextureWriteTracking_CountExtraReload(hostTexture);
 		return true;
 	}
 	return false;

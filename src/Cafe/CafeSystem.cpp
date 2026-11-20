@@ -15,6 +15,7 @@
 #include "Common/cpu_features.h"
 #include "input/InputManager.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/LatteTextureWriteTracking.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
@@ -1180,6 +1181,7 @@ namespace CafeSystem
 		UnmountCurrentTitle();
 		UnmountExtras();
 		MlcStorageUnmountAllTitles();
+		LatteTextureWriteTracking_LogSummaryAndReset();
 		UnmountBaseDirectories();
 		DestroyMemorySpace();
 		LaunchSettings::ClearCosArgstr();

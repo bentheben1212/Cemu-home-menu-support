@@ -1,3 +1,4 @@
+#include "Cafe/HW/Latte/Core/LatteTextureWriteTracking.h"
 #include "Cafe/HW/Latte/Core/LatteTextureLoader.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/LatteAddrLib/LatteAddrLib.h"
@@ -694,6 +695,7 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	{
 		tex->texDataPtrLow = physImagePtr + textureLoader.minOffsetOutdated; // always zero
 		tex->texDataPtrHigh = physImagePtr + textureLoader.maxOffsetOutdated; // currently set to surface size
+		LatteTextureWriteTracking_Register(tex);
 		LatteTC_ResetTextureChangeTracker(tex, true);
 	}
 	// load slice

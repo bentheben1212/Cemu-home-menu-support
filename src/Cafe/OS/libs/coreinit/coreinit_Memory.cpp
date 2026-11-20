@@ -1,6 +1,7 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "coreinit_Memory.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
+#include "Cafe/HW/Latte/Core/LatteTextureWriteTracking.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "Cafe/CafeSystem.h"
@@ -71,6 +72,7 @@ namespace coreinit
 	void* coreinit_memset(void* dst, uint32 value, uint32 size)
 	{
 		memset(dst, value, size);
+		LatteTextureWriteTracking_NotifyWrite(memory_getVirtualOffsetFromPointer(dst), size);
 		return dst;
 	}
 
@@ -85,6 +87,7 @@ namespace coreinit
 		if (size > 0)
 		{
 			memcpy(dst.GetPtr(), src.GetPtr(), size);
+			LatteTextureWriteTracking_NotifyWrite(dst.GetMPTR(), size);
 			// always flushes the cache!
 			LatteBufferCache_notifyDCFlush(dst.GetMPTR(), size);
 		}
@@ -97,6 +100,7 @@ namespace coreinit
 		if (size > 0)
 		{
 			memmove(dst.GetPtr(), src, size);
+			LatteTextureWriteTracking_NotifyWrite(dst.GetMPTR(), size);
 			// always flushes the cache!
 			LatteBufferCache_notifyDCFlush(dst.GetMPTR(), size);
 		}
@@ -108,6 +112,7 @@ namespace coreinit
 		if (size > 0)
 		{
 			memmove(dst.GetPtr(), src.GetPtr(), size);
+			LatteTextureWriteTracking_NotifyWrite(dst.GetMPTR(), size);
 			if (flushDC)
 				LatteBufferCache_notifyDCFlush(dst.GetMPTR(), size);
 		}
@@ -117,6 +122,7 @@ namespace coreinit
 	void* OSBlockSet(MEMPTR<void> dst, uint32 value, uint32 size)
 	{
 		memset(dst.GetPtr(), value&0xFF, size);
+		LatteTextureWriteTracking_NotifyWrite(dst.GetMPTR(), size);
 		return dst.GetPtr();
 	}
 

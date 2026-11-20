@@ -1,3 +1,4 @@
+#include "Cafe/HW/Latte/Core/LatteTextureWriteTracking.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
@@ -1382,6 +1383,7 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 
 LatteTexture::~LatteTexture()
 {
+	LatteTextureWriteTracking_Unregister(this);
 	_RemoveTextureFromGlobalList(this);
 	cemu_assert_debug(baseView == nullptr);
 	cemu_assert_debug(views.empty());

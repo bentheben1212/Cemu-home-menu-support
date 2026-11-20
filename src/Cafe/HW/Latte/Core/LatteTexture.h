@@ -165,6 +165,10 @@ public:
 	uint32 lastDataUpdateFrameCounter{};
 	// optimization
 	bool useLightHash{};
+	// CPU write tracking (LatteTextureWriteTracking.h): registered page range [first, end) and the write sequence number at the last check
+	uint32 writeTrackPageFirst{};
+	uint32 writeTrackPageEnd{};
+	uint32 writeTrackSeqChecked{};
 	// overwrite info
 	struct
 	{
