@@ -1,5 +1,7 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/OS/libs/sysapp/sysapp.h"
+#include "Cafe/OS/RPL/rpl.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/OS/libs/gx2/GX2_Misc.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
@@ -1072,6 +1074,23 @@ namespace coreinit
 		return 0;
 	}
 
+	// AcquireForeground for the HOME Menu is sent from an alarm shortly after the release: sending it directly from
+	// OSReleaseForeground (still running on one of ProcUI's core threads while the others finish the release) made the
+	// main thread start the acquire while the release was incomplete, and ProcUI's core threads deadlocked
+	CafeStaticVar<OSAlarm_t> s_homeMenuForegroundAlarm{g_coreinitStaticData};
+
+	static void _HomeMenuAcquireForegroundAlarmHandler(PPCInterpreter_t* hCPU)
+	{
+		cemuLog_log(LogType::Force, "HOME Menu: sending AcquireForeground");
+		OSMessage msg{};
+		msg.data0 = stdx::to_underlying(SysMessageId::MsgAcquireForeground);
+		msg.data1 = 1;
+		msg.data2 = 1;
+		if (!OSSendMessage(coreinit::OSGetSystemMessageQueue(), &msg, 0))
+			s_transitionToForeground = true; // queue full, retry in UpdateSystemMessageQueue
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
 	// returns true if the release was part of the HOME Menu handshake and has been handled. Only the final release
 	// (OSReleaseForeground, called by ProcUI's core threads once the release is complete) counts: answering the earlier
 	// OSSavesDone_ReadyToRelease (called from within ProcUIProcessMessages, before ProcUI started its background thread)
@@ -1086,13 +1105,9 @@ namespace coreinit
 		HomeMenuState expected = HomeMenuState::StartupHandshake;
 		if (s_homeMenuState.compare_exchange_strong(expected, HomeMenuState::Foreground))
 		{
-			cemuLog_log(LogType::Force, "HOME Menu: {} during startup, sending AcquireForeground", source);
-			OSMessage msg{};
-			msg.data0 = stdx::to_underlying(SysMessageId::MsgAcquireForeground);
-			msg.data1 = 1;
-			msg.data2 = 1;
-			if (!OSSendMessage(coreinit::OSGetSystemMessageQueue(), &msg, 0))
-				s_transitionToForeground = true; // queue full, retry in UpdateSystemMessageQueue
+			cemuLog_log(LogType::Force, "HOME Menu: {} during startup, bringing it to the foreground in 100 ms", source);
+			OSCreateAlarm(s_homeMenuForegroundAlarm.GetPtr());
+			OSSetAlarm(s_homeMenuForegroundAlarm.GetPtr(), ESPRESSO_TIMER_CLOCK / 10, RPLLoader_MakePPCCallable(_HomeMenuAcquireForegroundAlarmHandler));
 			return true;
 		}
 		expected = HomeMenuState::Returning;
