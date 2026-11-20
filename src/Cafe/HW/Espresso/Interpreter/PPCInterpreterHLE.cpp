@@ -3,6 +3,8 @@
 #include "PPCInterpreterHelper.h"
 #include <atomic>
 
+void PPCInterpreter_traceThreadUnsupportedCall(PPCInterpreter_t* hCPU, const char* libFuncName);
+
 // HLE call trace: after PPCInterpreter_startHLETrace, log the OS library calls guest code makes for a short time.
 // Used to see what a title does right after an event (e.g. the Wii U Menu after a launch check)
 static std::atomic<sint64> s_hleTraceDeadline{0}; // steady_clock ms, 0 = inactive
@@ -180,11 +182,71 @@ void PPCInterpreter_traceHLECallUnsupported(PPCInterpreter_t* hCPU, const char* 
 		libFuncName, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5], hCPU->gpr[6], hCPU->spr.LR);
 }
 
+namespace coreinit
+{
+	bool __OSIsTracedThreadRunning(); // CEMU_TRACE_THREAD, coreinit_Thread.cpp
+}
+
+// CEMU_TRACE_THREAD: every OS call of the traced thread, with how long it took (a long call = the thread was blocked).
+// Consecutive quick repeats of the same call are collapsed
+static struct
+{
+	std::string lastName;
+	uint32 lastLR{};
+	uint32 repeats{};
+	uint32 linesLeft{20000};
+}s_threadTraceCalls;
+
+static sint64 _ThreadTraceNowNs()
+{
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+static void _ThreadTraceFlushRepeats()
+{
+	if (s_threadTraceCalls.repeats > 0)
+		cemuLog_log(LogType::Force, "Thread trace call:   (previous call repeated {} more times)", s_threadTraceCalls.repeats);
+	s_threadTraceCalls.repeats = 0;
+}
+
+static void _ThreadTraceLogCall(std::string_view name, uint32 r3, uint32 r4, uint32 r5, uint32 r6, uint32 lr, uint32 result, sint64 durationNs, bool unsupported)
+{
+	if (s_threadTraceCalls.linesLeft == 0)
+		return;
+	if (!unsupported && durationNs < 1000000 && s_threadTraceCalls.lastName == name && s_threadTraceCalls.lastLR == lr)
+	{
+		s_threadTraceCalls.repeats++;
+		return;
+	}
+	_ThreadTraceFlushRepeats();
+	s_threadTraceCalls.lastName = name;
+	s_threadTraceCalls.lastLR = lr;
+	s_threadTraceCalls.linesLeft--;
+	cemuLog_log(LogType::Force, "Thread trace call: {}{} (r3 0x{:08x} r4 0x{:08x} r5 0x{:08x} r6 0x{:08x}) LR 0x{:08x} -> 0x{:08x} [{:.3f} ms]",
+		name, unsupported ? " UNSUPPORTED" : "", r3, r4, r5, r6, lr, result, durationNs / 1e6);
+	if (s_threadTraceCalls.linesLeft == 0)
+		cemuLog_log(LogType::Force, "Thread trace call: line limit reached, no more calls are logged");
+}
+
+void PPCInterpreter_traceThreadUnsupportedCall(PPCInterpreter_t* hCPU, const char* libFuncName)
+{
+	if (coreinit::__OSIsTracedThreadRunning())
+		_ThreadTraceLogCall(libFuncName, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5], hCPU->gpr[6], hCPU->spr.LR, 0, 0, true);
+}
+
 // calls a supported HLE function and, while a trace is active, logs it with its arguments and result
 void PPCInterpreter_callHLE(PPCInterpreter_t* hCPU, HLEIDX funcIndex)
 {
 	HLECALL hleCall = PPCInterpreter_getHLECall(funcIndex);
 	cemu_assert(hleCall);
+	if (coreinit::__OSIsTracedThreadRunning()) [[unlikely]]
+	{
+		uint32 r3 = hCPU->gpr[3], r4 = hCPU->gpr[4], r5 = hCPU->gpr[5], r6 = hCPU->gpr[6], lr = hCPU->spr.LR;
+		sint64 start = _ThreadTraceNowNs();
+		hleCall(hCPU);
+		_ThreadTraceLogCall(s_hleTableNames[funcIndex], r3, r4, r5, r6, lr, hCPU->gpr[3], _ThreadTraceNowNs() - start, false);
+		return;
+	}
 	if (s_hleTraceDeadline.load(std::memory_order_relaxed) == 0) [[likely]]
 	{
 		hleCall(hCPU);
@@ -234,6 +296,7 @@ void PPCInterpreter_handleUnsupportedHLECall(PPCInterpreter_t* hCPU)
 		uint64 count = ++s_unsupportedHLECallCount[hCPU->instructionPointer];
 		if (_HLERecordingActive())
 			_HLERecordResult(_HLERecordCall(libFuncName, hCPU), 0);
+		PPCInterpreter_traceThreadUnsupportedCall(hCPU, libFuncName);
 		if (PPCInterpreter_isHLETraceActive())
 			PPCInterpreter_traceHLECallUnsupported(hCPU, libFuncName);
 		if (count == 1)

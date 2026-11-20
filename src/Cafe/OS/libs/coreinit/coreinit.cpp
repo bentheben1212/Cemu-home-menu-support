@@ -161,6 +161,7 @@ void coreinitExport_OSGetSharedData(PPCInterpreter_t* hCPU)
 		{
 			memory_writeU32(hCPU->gpr[5], shareddataTable[i].data.GetMPTR());
 			memory_writeU32(hCPU->gpr[6], (uint32)shareddataTable[i].size);
+			cemuLog_log(LogType::Force, "OSGetSharedData(area {}, flags 0x{:x}) -> 0x{:08x} size 0x{:x} (LR 0x{:08x})", sharedAreaId, hCPU->gpr[4], shareddataTable[i].data.GetMPTR(), (uint32)shareddataTable[i].size, hCPU->spr.LR);
 			osLib_returnFromFunction(hCPU, 1);
 			return;
 		}

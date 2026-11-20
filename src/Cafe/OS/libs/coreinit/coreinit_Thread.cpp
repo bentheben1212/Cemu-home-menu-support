@@ -55,6 +55,8 @@ namespace coreinit
 #endif
 	void __OSAddReadyThreadToRunQueue(OSThread_t* thread);
 	void __OSRemoveThreadFromRunQueues(OSThread_t* thread);
+	static const char* _TraceThreadName();
+	static void _TraceOnDeactivate(OSThread_t* thread);
 };
 
 namespace coreinit
@@ -160,6 +162,8 @@ namespace coreinit
 		
 		cemu_assert_debug(thread->state == OSThread_t::THREAD_STATE::STATE_NONE);
 		thread->id = 0x8000;
+		if (_TraceThreadName()) [[unlikely]]
+			_TraceOnDeactivate(thread);
 
 		__OSTLSFreeForThread(thread);
 		__OSDeleteHostThread(thread);
@@ -724,6 +728,161 @@ namespace coreinit
 	}
 
 	// adds the thread to each core's run queue if in runable state
+
+	/* Thread trace (CEMU_TRACE_THREAD=<thread name>)
+	   Follows one guest thread by name: logs its OS calls (see PPCInterpreter_callHLE), and once per second how long it
+	   ran, waited in the run queue (ready) and was blocked, plus what else ran on its core in that second. All of it is
+	   inactive unless the environment variable is set */
+
+	static const char* _TraceThreadName()
+	{
+		static const char* s_name = []() -> const char* {
+			const char* v = getenv("CEMU_TRACE_THREAD");
+			return (v && *v) ? v : nullptr;
+		}();
+		return s_name;
+	}
+
+	thread_local bool t_tracedThreadRunning = false; // the traced thread is loaded on this host thread (core)
+
+	bool __OSIsTracedThreadRunning()
+	{
+		return t_tracedThreadRunning;
+	}
+
+	static sint64 _TraceNowNs()
+	{
+		return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+	}
+
+	struct
+	{
+		OSThread_t* thread{};
+		bool exited{};
+		sint64 intervalStartNs{};
+		sint64 runNs{}, readyNs{};
+		uint32 slices{};
+		sint64 readySinceNs{}; // 0 = not in run queue
+		sint64 totalRunNs{};
+		uint32 coreIndex{1};
+		std::map<OSThread_t*, std::pair<std::string, sint64>> coreActivity; // other threads on the same core: name, run time
+	}s_threadTrace;
+
+	sint64 s_sliceStartNs[PPC_CORE_COUNT]{};
+
+	static std::string _TraceGetThreadName(OSThread_t* thread)
+	{
+		const char* name = thread->threadName.GetPtr();
+		return name ? std::string(name) : fmt::format("<unnamed {:08x}>", MEMPTR<OSThread_t>(thread).GetMPTR());
+	}
+
+	static bool _TraceIsTracedThread(OSThread_t* thread)
+	{
+		const char* wanted = _TraceThreadName();
+		if (!wanted || !thread)
+			return false;
+		if (s_threadTrace.thread == thread)
+			return true;
+		const char* name = thread->threadName.GetPtr();
+		if (!name || strcmp(name, wanted) != 0)
+			return false;
+		// first sighting of the thread
+		s_threadTrace = {};
+		s_threadTrace.thread = thread;
+		s_threadTrace.intervalStartNs = _TraceNowNs();
+		cemuLog_log(LogType::Force, "Thread trace: found thread \"{}\" ({:08x}) priority {} (base {}) affinity 0x{:x}", wanted, MEMPTR<OSThread_t>(thread).GetMPTR(), (sint32)thread->effectivePriority, (sint32)thread->basePriority, (uint32)thread->attr & 7);
+		return true;
+	}
+
+	static void _TracePrintIntervalIfDue(sint64 now)
+	{
+		if (!s_threadTrace.thread || s_threadTrace.exited)
+			return;
+		sint64 interval = now - s_threadTrace.intervalStartNs;
+		if (interval < 1000000000ll)
+			return;
+		OSThread_t* t = s_threadTrace.thread;
+		sint64 readyNs = s_threadTrace.readyNs;
+		if (s_threadTrace.readySinceNs != 0)
+		{
+			readyNs += now - s_threadTrace.readySinceNs;
+			s_threadTrace.readySinceNs = now;
+		}
+		sint64 blockedNs = std::max<sint64>(interval - s_threadTrace.runNs - readyNs, 0);
+		std::string others;
+		std::vector<std::pair<sint64, std::string>> sorted;
+		for (auto& it : s_threadTrace.coreActivity)
+			sorted.emplace_back(it.second.second, it.second.first);
+		std::sort(sorted.begin(), sorted.end(), [](auto& a, auto& b) { return a.first > b.first; });
+		for (size_t i = 0; i < sorted.size() && i < 6; i++)
+			others.append(fmt::format("{}{} {:.1f}ms", i ? ", " : "", sorted[i].second, sorted[i].first / 1e6));
+		static const char* stateNames[] = { "NONE", "READY", "RUNNING", "WAITING", "MORIBUND" };
+		uint32 state = (uint32)t->state.value();
+		cemuLog_log(LogType::Force, "Thread trace: last {:.2f}s: ran {:.1f}ms in {} slices, ready (waiting for core) {:.1f}ms, blocked {:.1f}ms | state {} prio {} core {} total run {:.1f}ms | core {} also ran: {}",
+			interval / 1e9, s_threadTrace.runNs / 1e6, s_threadTrace.slices, readyNs / 1e6, blockedNs / 1e6,
+			state < 5 ? stateNames[state] : "?", (sint32)t->effectivePriority, s_threadTrace.coreIndex, s_threadTrace.totalRunNs / 1e6,
+			s_threadTrace.coreIndex, others.empty() ? "(nothing)" : others);
+		s_threadTrace.intervalStartNs = now;
+		s_threadTrace.runNs = 0;
+		s_threadTrace.readyNs = 0;
+		s_threadTrace.slices = 0;
+		s_threadTrace.coreActivity.clear();
+	}
+
+	// called with the scheduler lock held
+	static void _TraceOnLoad(OSThread_t* thread, uint32 coreIndex)
+	{
+		sint64 now = _TraceNowNs();
+		s_sliceStartNs[coreIndex] = now;
+		t_tracedThreadRunning = _TraceIsTracedThread(thread);
+		if (t_tracedThreadRunning)
+		{
+			s_threadTrace.coreIndex = coreIndex;
+			s_threadTrace.slices++;
+			if (s_threadTrace.readySinceNs != 0)
+			{
+				s_threadTrace.readyNs += now - s_threadTrace.readySinceNs;
+				s_threadTrace.readySinceNs = 0;
+			}
+		}
+		_TracePrintIntervalIfDue(now);
+	}
+
+	static void _TraceOnStore(OSThread_t* thread, uint32 coreIndex)
+	{
+		sint64 now = _TraceNowNs();
+		sint64 slice = s_sliceStartNs[coreIndex] ? now - s_sliceStartNs[coreIndex] : 0;
+		if (thread == s_threadTrace.thread)
+		{
+			s_threadTrace.runNs += slice;
+			s_threadTrace.totalRunNs += slice;
+		}
+		else if (s_threadTrace.thread && coreIndex == s_threadTrace.coreIndex && thread)
+		{
+			auto& entry = s_threadTrace.coreActivity[thread];
+			if (entry.first.empty())
+				entry.first = fmt::format("{} (prio {})", _TraceGetThreadName(thread), (sint32)thread->effectivePriority);
+			entry.second += slice;
+		}
+		t_tracedThreadRunning = false;
+		_TracePrintIntervalIfDue(now);
+	}
+
+	static void _TraceOnReady(OSThread_t* thread)
+	{
+		if (thread == s_threadTrace.thread && s_threadTrace.readySinceNs == 0)
+			s_threadTrace.readySinceNs = _TraceNowNs();
+	}
+
+	static void _TraceOnDeactivate(OSThread_t* thread)
+	{
+		if (thread != s_threadTrace.thread)
+			return;
+		cemuLog_log(LogType::Force, "Thread trace: thread \"{}\" exited, total run time {:.1f}ms", _TraceThreadName(), s_threadTrace.totalRunNs / 1e6);
+		s_threadTrace.exited = true;
+		s_threadTrace.thread = nullptr;
+	}
+
 	void __OSAddReadyThreadToRunQueue(OSThread_t* thread)
 	{
         cemu_assert_debug(MMU_IsInPPCMemorySpace(thread));
@@ -734,6 +893,8 @@ namespace coreinit
 			return;
 		if (thread->suspendCounter != 0)
 			return;
+		if (_TraceThreadName()) [[unlikely]]
+			_TraceOnReady(thread);
 		for (sint32 i = 0; i < PPC_CORE_COUNT; i++)
 		{
 			if (thread->currentRunQueue[i] != nullptr)
@@ -1150,6 +1311,8 @@ namespace coreinit
 		else
 			executedCycles -= hCPU->skippedCycles;
 		thread->totalCycles += (uint64)executedCycles;
+		if (_TraceThreadName()) [[unlikely]]
+			_TraceOnStore(thread, PPCInterpreter_getCoreIndex(hCPU));
 		// store context and set current thread to null
 		__OSThreadStoreContext(hCPU, thread);
 		OSSetCurrentThread(OSGetCoreId(), nullptr);
@@ -1172,6 +1335,8 @@ namespace coreinit
 		// statistics
 		thread->wakeUpTime = PPCInterpreter_getMainCoreCycleCounter();
 		thread->wakeUpCount = thread->wakeUpCount + 1;
+		if (_TraceThreadName()) [[unlikely]]
+			_TraceOnLoad(thread, coreIndex);
 	}
 
 	uint32 s_lehmer_lcg[PPC_CORE_COUNT] = { 0 };
