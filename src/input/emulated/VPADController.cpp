@@ -469,6 +469,7 @@ uint32 VPADController::get_emulated_button_flag(uint32 id) const
 	case kButtonId_StickR_Down: return VPAD_STICK_R_DOWN;
 	case kButtonId_StickR_Left: return VPAD_STICK_R_LEFT;
 	case kButtonId_StickR_Right: return VPAD_STICK_R_RIGHT;
+	case kButtonId_Home: return VPAD_HOME;
 	}
 	return 0;
 }

@@ -55,6 +55,8 @@ uint32 ProController::s_get_emulated_button_flag(uint32 id)
 		return kProButton_R;
 	case kButtonId_ZR:
 		return kProButton_ZR;
+	case kButtonId_Home:
+		return kProButton_Home;
 
 	default:
 		return 0;

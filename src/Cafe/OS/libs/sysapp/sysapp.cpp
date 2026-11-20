@@ -636,6 +636,11 @@ namespace sysapp
 		return 0;
 	}
 
+	uint64 GetWiiUMenuTitleId()
+	{
+		return _SYSFindWiiUMenuTitleId();
+	}
+
 	void SYSLaunchMenu()
 	{
 		uint64 menuTitleId = _SYSFindWiiUMenuTitleId();

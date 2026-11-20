@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/libs/vpad/vpad.h"
 #include "audio/IAudioAPI.h"
@@ -284,6 +285,7 @@ namespace vpad
 				}
 			}
 			controller->VPADRead(*status, vpad::g_vpad.controller_data[channel].btn_repeat);
+			coreinit::__OSHomeButtonInput(channel, controller->is_home_down());
 			if (error)
 				*error = VPAD_READ_ERR_NONE;
 			return 1;

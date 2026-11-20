@@ -50,6 +50,8 @@ uint32 ClassicController::s_get_emulated_button_flag(uint32 id)
 		return kCLButton_R;
 	case kButtonId_ZR:
 		return kCLButton_ZR;
+	case kButtonId_Home:
+		return kCLButton_Home;
 	}
 
 	return 0;

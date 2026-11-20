@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/OS/libs/sysapp/sysapp.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MessageQueue.h"
 #include "Cafe/OS/libs/coreinit/coreinit_OSScreen.h"
@@ -930,6 +931,79 @@ namespace coreinit
 		return OSSendMessage(coreinit::OSGetSystemMessageQueue(), &msg, 0);
 	}
 
+	/* HOME button (emulated controllers) */
+
+	static bool s_homeButtonDown[16]{}; // per input source (VPAD and KPAD channels)
+	static std::atomic<bool> s_homeCloseInProgress = false;
+
+	static bool _IsWiiUMenuTitle(uint64 titleId)
+	{
+		return (titleId & 0xFFFFFFFFFFFFF0FFull) == 0x0005001010040000ull;
+	}
+
+	static void _HandleHomeButtonPress(uint32 source)
+	{
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		if (s_homeCloseInProgress || s_exitRequested || s_forcedSwitchInProgress)
+		{
+			cemuLog_log(LogType::Force, "HOME button: pressed while the title is already closing, ignored");
+			return;
+		}
+		if (_IsWiiUMenuTitle(currentTitleId))
+		{
+			cemuLog_log(LogType::Force, "HOME button: pressed on the Wii U Menu, ignored (the HOME Menu is not implemented yet)");
+			return;
+		}
+		if (!g_homeButtonMenuEnabled)
+		{
+			// the title disabled the HOME Menu (e.g. while saving), a console tells it the press was denied
+			cemuLog_log(LogType::Force, "HOME button: HOME Menu disabled by the title, sending HomeButtonDenied");
+			_SendSystemMessage(SysMessageId::HomeButtonDenied, 0);
+			return;
+		}
+		uint64 targetTitleId;
+		if (_IsAppletTitle(currentTitleId) && s_callerTitleId != 0 && s_mainAppTitleId != 0)
+		{
+			targetTitleId = s_mainAppTitleId;
+			cemuLog_log(LogType::Force, "HOME button: closing applet {:016x}, returning to {:016x}", currentTitleId, targetTitleId);
+		}
+		else
+		{
+			targetTitleId = sysapp::GetWiiUMenuTitleId();
+			if (targetTitleId == 0)
+			{
+				cemuLog_log(LogType::Force, "HOME button: no Wii U Menu installed, cannot close the software");
+				return;
+			}
+			cemuLog_log(LogType::Force, "HOME button: \"Close software\" for {:016x}, returning to the Wii U Menu {:016x}", currentTitleId, targetTitleId);
+		}
+		s_homeCloseInProgress = true;
+		// same path as closing from the HOME Menu: the title gets ReleaseForeground (shutdown) to save and release the
+		// foreground, then Exit; its exit performs the queued switch
+		__OSQueueTitleSwitch(targetTitleId);
+		__OSRequestProcessExit();
+		// deliver ReleaseForeground right away (the title may be blocked waiting on the system message queue)
+		if (_SendSystemMessage(SysMessageId::MsgReleaseForeground, 1))
+		{
+			s_releaseForShutdownPending = false;
+			cemuLog_log(LogType::Force, "HOME button: sent ReleaseForeground (shutdown), waiting for the title to save and release the foreground");
+		}
+	}
+
+	// called from the input reads (VPADRead, KPADRead) with the HOME button state of a controller
+	void __OSHomeButtonInput(uint32 source, bool isDown)
+	{
+		if (source >= std::size(s_homeButtonDown))
+			return;
+		bool wasDown = s_homeButtonDown[source];
+		s_homeButtonDown[source] = isDown;
+		if (isDown && !wasDown)
+		{
+			cemuLog_log(LogType::Force, "HOME button: pressed (input source {})", source);
+			_HandleHomeButtonPress(source);
+		}
+	}
+
 	// called once the app is done with its foreground release
 	static void _OnForegroundReleased(const char* source)
 	{
@@ -1091,6 +1165,11 @@ namespace coreinit
 		s_exitRequested = false;
 		s_releaseForShutdownPending = false;
 		s_exitMessagePending = false;
+		s_homeCloseInProgress = false;
+		for (auto& it : s_homeButtonDown)
+			it = false;
+		// the HOME Menu is available unless the title disables it (OSEnableHomeButtonMenu)
+		g_homeButtonMenuEnabled = true;
 
 		cafeExportRegister("coreinit", __os_snprintf, LogType::Placeholder);
 

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/libs/padscore/padscore.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
@@ -476,6 +477,7 @@ sint32 _KPADRead(uint32 channel, KPADStatus_t* samplingBufs, uint32 length, bety
 	{
 		const auto btn_repeat = padscore::g_padscore.controller_data[channel].btn_repeat;
 		controller->KPADRead(*samplingBufs, btn_repeat);
+		coreinit::__OSHomeButtonInput(2 + channel, controller->is_home_down()); // sources 0-1 are GamePads
 	}
 
 	if (errResult)

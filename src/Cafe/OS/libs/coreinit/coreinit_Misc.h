@@ -14,6 +14,7 @@ namespace coreinit
 	uint64 __OSGetCallerTitleId(); // title that launched the current one (0 if started directly)
 	void __OSDumpRecentConsoleOutput(); // log the last console (OSReport) lines regardless of log settings
 	void __OSRequestProcessExit(); // ask the app to exit via ProcUI (ReleaseForeground -> Exit system messages)
+	void __OSHomeButtonInput(uint32 source, bool isDown); // HOME button state of an emulated controller, from the input reads
 
 	void OSReleaseForeground();
 
