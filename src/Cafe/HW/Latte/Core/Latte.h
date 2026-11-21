@@ -133,6 +133,14 @@ std::vector<LatteTexture*> LatteTC_GetDeleteableTextures();
 
 void LatteTC_UnloadAllTextures();
 
+// GPU cache owners: a suspended title keeps its textures and buffers on the GPU while another title runs at the same
+// guest addresses. Every texture is tagged with the owner that was active when it was created; lookups, overlap
+// tracking and eviction only consider textures of the active owner. GPU thread only
+uint32 LatteTC_GetActiveOwner();
+void LatteTC_SetActiveOwner(uint32 ownerId);
+void LatteTC_DeleteTexturesOfOwner(uint32 ownerId);
+void LatteTC_PrepareTexturesForResume(uint32 ownerId); // marks them as used now and drops CPU writes recorded for other owners
+
 // texture readback
 
 void LatteTextureReadback_Initate(LatteTextureView* textureView);
@@ -185,4 +193,13 @@ void LatteRenderTarget_updateViewport();
 void Latte_Start();
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
+bool Latte_IsRunning(); // GPU thread started and initialized
+
+// runs task on the GPU thread once it has no commands to process (called from another thread, blocks until the task is
+// done). Returns false without running it if the GPU thread doesn't get idle within timeoutMs or isn't running
+bool Latte_RunOnGPUThreadWhenIdle(std::function<void()> task, uint32 timeoutMs);
+void Latte_RunPendingIdleTask(); // GPU thread, called while waiting for commands
+// GPU thread: makes newOwnerId's cached textures and buffers active (see LatteTC_SetActiveOwner). The current owner's
+// are kept (a suspended title) or deleted (a title that ended). Also clears caches keyed by guest address
+void Latte_SwitchCacheOwner(uint32 newOwnerId, bool deleteCurrent);
 void LatteThread_Exit();

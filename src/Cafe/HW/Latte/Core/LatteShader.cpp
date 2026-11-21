@@ -1335,6 +1335,17 @@ sint32 LatteDecompiler_getTextureSamplerBaseIndex(LatteConst::ShaderType shaderT
 	return 0;
 }
 
+// the shader state cache is keyed by shader program addresses, not contents. When another title becomes active the same
+// addresses can hold other programs, so the cache is cleared (the compiled shaders stay, they are keyed by content)
+void LatteSHRC_ResetShaderStateCache()
+{
+	while (!s_shaderStateCache.empty())
+		LatteSHRC_RemoveShaderStateCacheEntryByKey(s_shaderStateCache.begin()->first);
+	s_shaderStateCacheKeys.clear();
+	s_shaderStateCacheCleanupIndex = 0;
+	LatteSHRC_ResetCachedShaderHash();
+}
+
 void LatteSHRC_Init()
 {
 	cemu_assert_debug(sVertexShaders.empty());

@@ -6,6 +6,17 @@
 #include "Common/cpu_features.h"
 
 std::unordered_set<LatteTexture*> g_allTextures;
+uint32 s_latteTCActiveOwner = 0;
+
+uint32 LatteTC_GetActiveOwner()
+{
+	return s_latteTCActiveOwner;
+}
+
+void LatteTC_SetActiveOwner(uint32 ownerId)
+{
+	s_latteTCActiveOwner = ownerId;
+}
 
 void LatteTC_Init()
 {
@@ -556,6 +567,8 @@ void LatteTC_CleanupUnusedTextures()
 			currentScanIndex++;
 			if (!texItr)
 				continue;
+			if (texItr->ownerId != s_latteTCActiveOwner)
+				continue; // a suspended title's texture, kept until it resumes
 			if (LatteTC_CleanupCheckTexture(texItr, currentTick))
 			{
 				maxDelete--;
@@ -576,6 +589,8 @@ std::vector<LatteTexture*> LatteTC_GetDeleteableTextures()
 
 	for (auto& itr : g_allTextures)
 	{
+		if (itr->ownerId != s_latteTCActiveOwner)
+			continue; // a suspended title's texture, kept until it resumes
 		if(itr->lastAccessFrameCount == 0)
 			continue; // not initialized
 		uint32 framesSinceLastAccess = currentFrameCount - itr->lastAccessFrameCount;
@@ -595,6 +610,36 @@ std::vector<LatteTexture*> LatteTC_GetDeleteableTextures()
 	return texList;
 }
 
+void LatteTC_DeleteTexturesOfOwner(uint32 ownerId)
+{
+	std::vector<LatteTexture*> allTexturesCopy = LatteTexture::GetAllTextures();
+	uint32 count = 0;
+	for (auto& itr : allTexturesCopy)
+	{
+		if (itr && itr->ownerId == ownerId)
+		{
+			LatteTexture_Delete(itr);
+			count++;
+		}
+	}
+	cemuLog_log(LogType::Force, "GPU: deleted {} textures of owner {}", count, ownerId);
+}
+
+void LatteTC_PrepareTexturesForResume(uint32 ownerId)
+{
+	uint32 count = 0;
+	for (LatteTexture* texture : LatteTexture::GetAllTextures())
+	{
+		if (!texture || texture->ownerId != ownerId)
+			continue;
+		LatteTC_MarkTextureStillInUse(texture);
+		// CPU writes tracked while the other title ran went to that title's memory at the same addresses
+		LatteTextureWriteTracking_ConsumeWrites(texture);
+		count++;
+	}
+	cemuLog_log(LogType::Force, "GPU: {} textures of owner {} active again", count, ownerId);
+}
+
 void LatteTC_UnloadAllTextures()
 {
 	std::vector<LatteTexture*> allTexturesCopy = LatteTexture::GetAllTextures();
@@ -604,4 +649,5 @@ void LatteTC_UnloadAllTextures()
 			LatteTexture_Delete(itr);
 	}
 	LatteRenderTarget_unloadAll();
+	s_latteTCActiveOwner = 0;
 }

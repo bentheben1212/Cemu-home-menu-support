@@ -765,6 +765,8 @@ void LatteTexture_GatherTextureRelations(LatteTexture* texture)
 					LatteTexture* itrTexture = occupancy.sliceMipInfo->texture;
 					if (itrTexture == texture)
 						continue; // ignore self
+					if (itrTexture->ownerId != texture->ownerId)
+						continue; // belongs to a suspended title (same addresses, different memory)
 					if (sliceMipInfo->addrEnd >= occupancy.addrStart && sliceMipInfo->addrStart < occupancy.addrEnd)
 					{
 						if (sliceMipInfo->addrStart == occupancy.addrStart && sliceMipInfo->subIndex == occupancy.sliceMipInfo->subIndex)
@@ -1014,6 +1016,8 @@ LatteTextureView* LatteTexture_CreateMapping(MPTR physAddr, MPTR physMipAddr, si
 		{
 			for (auto& occupancy : list_texMemOccupancyBucket[bucketIndex])
 			{
+				if (occupancy.sliceMipInfo->texture->ownerId != LatteTC_GetActiveOwner())
+					continue;
 				if (calcSliceAddrEnd >= occupancy.addrStart && calcSliceAddrStart < occupancy.addrEnd)
 				{
 					if (calcSliceAddrStart == occupancy.addrStart)
@@ -1116,6 +1120,8 @@ LatteTextureView* LatteTC_LookupTextureByData(MPTR physAddr, sint32 width, sint3
 			if (bucket[i].addrStart == physAddr)
 			{
 				LatteTexture* tex = bucket[i].sliceMipInfo->texture;
+				if (tex->ownerId != LatteTC_GetActiveOwner())
+					continue;
 				if (tex->physAddress == physAddr && tex->pitch == pitch)
 				{
 					if (firstSlice >= 0 && firstSlice < (tex->depth))
@@ -1145,7 +1151,7 @@ void LatteTC_LookupTexturesByPhysAddr(MPTR physAddr, std::vector<LatteTexture*>&
 			if (list_texMemOccupancyBucket[bucketIndex][i].addrStart == physAddr)
 			{
 				LatteTexture* tex = list_texMemOccupancyBucket[bucketIndex][i].sliceMipInfo->texture;
-				if (tex->physAddress == physAddr)
+				if (tex->physAddress == physAddr && tex->ownerId == LatteTC_GetActiveOwner())
 				{
 					vectorAppendUnique(list_textures, tex);
 				}
@@ -1257,6 +1263,7 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 	Latte::E_HWTILEMODE tileMode, bool isDepth)
 {
 	_AddTextureToGlobalList(this);
+	this->ownerId = LatteTC_GetActiveOwner();
 	if (depth < 1)
 		depth = 1;
 	// setup texture object

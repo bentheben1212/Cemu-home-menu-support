@@ -1,5 +1,6 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/CafeProcessState.h"
+#include "Cafe/CafeProcess.h"
 #include "WindowSystem.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
@@ -412,7 +413,8 @@ void cemu_initForGame()
 	}
 	LatteGPUState.isDRCPrimary = ActiveSettings::DisplayDRCEnabled();
 	InfoLog_PrintActiveSettings();
-	Latte_Start();
+	if (!Latte_IsRunning()) // still running if a suspended title kept it (see CafeProcess)
+		Latte_Start();
 	// check for debugger entrypoint bp
     if (g_gdbstub)
     {
@@ -1158,14 +1160,17 @@ namespace CafeSystem
 
 	std::mutex sShutdownTitleMtx;
 
-	void ShutdownTitle()
+	static void _ShutdownTitle(bool forTitleSwitch)
 	{
 		// can race between the UI thread (closing Cemu / stopping emulation) and the host thread spawned by a guest exit or title switch
 		std::unique_lock _lock(sShutdownTitleMtx);
 		if(!sSystemRunning)
 			return;
 		coreinit::OSSchedulerEnd();
-		Latte_Stop();
+		if (forTitleSwitch && CafeProcess::IsGPUKeptForSuspendedTitle())
+			CafeProcess::ReleaseForegroundGPUState(); // the GPU thread stays for the suspended title, only this title's caches go
+		else
+			Latte_Stop();
 		coreinit::IPCCloseAllHandles();
 		// reset Cafe OS userspace modules
 		snd_core::reset();
@@ -1189,6 +1194,22 @@ namespace CafeSystem
 		PPCInterpreter_resetUnsupportedHLECallTracking();
 		sSystemRunning = false;
 		s_foregroundTitleCompatibility = TitleCompatibility::Default;
+	}
+
+	void ShutdownTitle()
+	{
+		_ShutdownTitle(false);
+		// emulation stops: a suspended title can't continue
+		if (CafeProcess::HasSuspendedTitle())
+		{
+			Latte_Stop();
+			CafeProcess::DiscardSuspendedTitle();
+		}
+	}
+
+	void ShutdownTitleForSwitch()
+	{
+		_ShutdownTitle(true);
 	}
 
 	void DetachSuspendedTitle()

@@ -1154,6 +1154,7 @@ public:
 
 	uint32 GetDrawcallAge() const { return LatteGPUState.drawCallCounter - m_lastDrawcall; };
 	uint32 GetFrameAge() const { return LatteGPUState.frameCounter - m_lastFrame; };
+	void ResetFrameAge() { m_lastFrame = LatteGPUState.frameCounter; }
 
 	bool HasStreamoutData() const { return m_hasStreamoutData; };
 
@@ -1624,9 +1625,80 @@ void LatteBufferCache_init(size_t bufferSize)
 	g_renderer->bufferCache_init((uint32)bufferSize);
 }
 
+// GPU cache owners (see LatteTC_SetActiveOwner): an interval tree can't hold the same address range twice, so every
+// owner has its own tree and node list. Only the active owner's set is used for lookups and eviction; the sets of
+// suspended titles are parked here unchanged. All sets share the GPU heap
+struct BufferCacheOwnerSet
+{
+	IntervalTree<MPTR, BufferCacheNode> tree;
+	std::vector<BufferCacheNode*> nodes;
+};
+std::unordered_map<uint32, BufferCacheOwnerSet> s_parkedBufferCaches;
+uint32 s_bufferCacheActiveOwner = 0;
+
+void LatteBufferCache_processDCFlushQueue();
+void LatteBufferCache_clearDCFlushQueue();
+
+static void _LatteBufferCache_swapActiveSet(BufferCacheOwnerSet& set)
+{
+	std::swap(g_gpuBufferCache, set.tree);
+	std::swap(s_allCacheNodes, set.nodes);
+}
+
+void LatteBufferCache_SwitchOwner(uint32 newOwnerId, bool deleteCurrent)
+{
+	uint32 numDeleted = 0, numParked = 0, numRestored = 0;
+	if (deleteCurrent)
+	{
+		LatteBufferCache_clearDCFlushQueue(); // flushes of the title that ends
+		numDeleted = (uint32)s_allCacheNodes.size();
+		BufferCacheNode::ProcessDeallocations(); // UnloadAll drops the queue
+		BufferCacheNode::UnloadAll();
+	}
+	else
+	{
+		LatteBufferCache_processDCFlushQueue(); // apply pending flushes while the memory still belongs to this owner
+		numParked = (uint32)s_allCacheNodes.size();
+		BufferCacheOwnerSet& parked = s_parkedBufferCaches[s_bufferCacheActiveOwner];
+		cemu_assert_debug(parked.nodes.empty());
+		_LatteBufferCache_swapActiveSet(parked); // the active set is now empty
+	}
+	auto it = s_parkedBufferCaches.find(newOwnerId);
+	if (it != s_parkedBufferCaches.end())
+	{
+		cemu_assert_debug(s_allCacheNodes.empty());
+		_LatteBufferCache_swapActiveSet(it->second);
+		s_parkedBufferCaches.erase(it);
+		numRestored = (uint32)s_allCacheNodes.size();
+		for (auto& node : s_allCacheNodes)
+			node->ResetFrameAge(); // not evicted right away for having been unused while suspended
+	}
+	cemuLog_log(LogType::Force, "GPU: buffer cache owner {} -> {} (nodes deleted {} parked {} restored {})", s_bufferCacheActiveOwner, newOwnerId, numDeleted, numParked, numRestored);
+	s_bufferCacheActiveOwner = newOwnerId;
+}
+
+void LatteBufferCache_DeleteParkedOwner(uint32 ownerId)
+{
+	auto it = s_parkedBufferCaches.find(ownerId);
+	if (it == s_parkedBufferCaches.end())
+		return;
+	// node deletion updates the active node list, so swap the parked set in for it
+	BufferCacheOwnerSet active;
+	_LatteBufferCache_swapActiveSet(active);
+	_LatteBufferCache_swapActiveSet(it->second);
+	BufferCacheNode::ProcessDeallocations(); // UnloadAll drops the queue
+	BufferCacheNode::UnloadAll();
+	_LatteBufferCache_swapActiveSet(it->second);
+	_LatteBufferCache_swapActiveSet(active);
+	s_parkedBufferCaches.erase(it);
+}
+
 void LatteBufferCache_UnloadAll()
 {
-    BufferCacheNode::UnloadAll();
+	while (!s_parkedBufferCaches.empty())
+		LatteBufferCache_DeleteParkedOwner(s_parkedBufferCaches.begin()->first);
+	BufferCacheNode::UnloadAll();
+	s_bufferCacheActiveOwner = 0;
 }
 
 void LatteBufferCache_getStats(uint32& heapSize, uint32& allocationSize, uint32& allocNum)
@@ -1717,6 +1789,13 @@ void LatteBufferCache_processDCFlushQueue()
 	std::swap(s_DCFlushQueue, s_DCFlushQueueAlternate);
 	g_spinlockDCFlushQueue.unlock();
 	s_DCFlushQueueAlternate->ForAllAndClear([](uint32 index) {LatteBufferCache_invalidatePage(index * CACHE_PAGE_SIZE); });
+}
+
+void LatteBufferCache_clearDCFlushQueue()
+{
+	g_spinlockDCFlushQueue.lock();
+	s_DCFlushQueue->Clear();
+	g_spinlockDCFlushQueue.unlock();
 }
 
 void LatteBufferCache_notifyDrawDone()

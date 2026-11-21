@@ -18,6 +18,8 @@
 #include "config/ActiveSettings.h"
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/LatteCachedFBO.h"
+#include "Cafe/HW/Latte/Core/LatteIndices.h"
 
 LatteGPUState_t LatteGPUState = {};
 
@@ -213,6 +215,7 @@ int Latte_ThreadEntry()
 		std::this_thread::yield();
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		LatteThread_HandleOSScreen();
+		Latte_RunPendingIdleTask();
 		if (Latte_GetStopSignal())
 			LatteThread_Exit();
 	}
@@ -253,6 +256,87 @@ void Latte_Stop()
 bool Latte_GetStopSignal()
 {
 	return !sLatteThreadRunning;
+}
+
+bool Latte_IsRunning()
+{
+	return sLatteThreadRunning && sLatteThreadFinishedInit;
+}
+
+// tasks run on the GPU thread while it waits for commands
+std::mutex s_gpuIdleTaskCallerMutex; // one task at a time
+std::mutex s_gpuIdleTaskMutex;
+std::condition_variable s_gpuIdleTaskCond;
+std::function<void()> s_gpuIdleTask;
+std::atomic<bool> s_gpuIdleTaskPending = false;
+bool s_gpuIdleTaskRunning = false;
+
+void Latte_RunPendingIdleTask()
+{
+	if (!s_gpuIdleTaskPending.load(std::memory_order_acquire))
+		return;
+	std::function<void()> task;
+	{
+		std::unique_lock _l(s_gpuIdleTaskMutex);
+		if (!s_gpuIdleTaskPending)
+			return;
+		task = std::move(s_gpuIdleTask);
+		s_gpuIdleTask = nullptr;
+		s_gpuIdleTaskPending = false;
+		s_gpuIdleTaskRunning = true;
+	}
+	task();
+	{
+		std::unique_lock _l(s_gpuIdleTaskMutex);
+		s_gpuIdleTaskRunning = false;
+	}
+	s_gpuIdleTaskCond.notify_all();
+}
+
+bool Latte_RunOnGPUThreadWhenIdle(std::function<void()> task, uint32 timeoutMs)
+{
+	std::unique_lock _callerLock(s_gpuIdleTaskCallerMutex);
+	if (!Latte_IsRunning())
+		return false;
+	std::unique_lock _l(s_gpuIdleTaskMutex);
+	s_gpuIdleTask = std::move(task);
+	s_gpuIdleTaskPending = true;
+	auto isDone = []() { return !s_gpuIdleTaskPending && !s_gpuIdleTaskRunning; };
+	if (s_gpuIdleTaskCond.wait_for(_l, std::chrono::milliseconds(timeoutMs), isDone))
+		return true;
+	if (s_gpuIdleTaskPending)
+	{
+		// never started: withdraw it
+		s_gpuIdleTaskPending = false;
+		s_gpuIdleTask = nullptr;
+		return false;
+	}
+	s_gpuIdleTaskCond.wait(_l, isDone); // started, let it finish
+	return true;
+}
+
+void Latte_SwitchCacheOwner(uint32 newOwnerId, bool deleteCurrent)
+{
+	uint32 oldOwnerId = LatteTC_GetActiveOwner();
+	auto start = std::chrono::steady_clock::now();
+	// finish operations that write into the current owner's memory
+	LatteTextureReadback_UpdateFinishedTransfers(true);
+	LatteQuery_UpdateFinishedQueriesForceFinishAll();
+	LatteIndices_invalidateAll();
+	// nothing stays bound
+	for (uint32 i = 0; i < Latte::GPU_LIMITS::NUM_COLOR_ATTACHMENTS; i++)
+		LatteMRT::SetColorAttachment(i, nullptr);
+	LatteMRT::SetDepthAndStencilAttachment(nullptr, false);
+	if (deleteCurrent)
+		LatteTC_DeleteTexturesOfOwner(oldOwnerId);
+	LatteBufferCache_SwitchOwner(newOwnerId, deleteCurrent);
+	LatteTC_SetActiveOwner(newOwnerId);
+	LatteTC_PrepareTexturesForResume(newOwnerId);
+	// caches keyed by shader program addresses
+	LatteSHRC_ResetShaderStateCache();
+	LatteGPUState.frameCounter++; // fetch shader lookups made in an earlier frame are verified against the program data
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	cemuLog_log(LogType::Force, "GPU: cache owner {} -> {} ({} the old one's textures and buffers) in {} ms", oldOwnerId, newOwnerId, deleteCurrent ? "deleted" : "kept", ms);
 }
 
 std::atomic<bool> g_latteReadbackOnExit = false; // set by CafeProcess when suspending a title

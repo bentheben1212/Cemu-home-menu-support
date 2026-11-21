@@ -57,6 +57,7 @@ struct LatteTexViewLookupDesc
 		this->format = view->format;
 		this->dim = view->dim;
 		this->isDepth = view->baseTexture->isDepth;
+		this->ownerId = view->baseTexture->ownerId;
 	}
 
 	void SetParametersForSubTexture(sint32 baseMip, sint32 baseSlice)
@@ -77,6 +78,7 @@ struct LatteTexViewLookupDesc
 	}
 
 	// key data for looking up views
+	uint32 ownerId; // only views of the active owner's textures are returned
 	MPTR physAddr;
 	MPTR physMipAddr;
 	sint32 width;
@@ -149,8 +151,11 @@ LatteTextureView* LatteTextureViewLookupCache::lookup(MPTR physAddr, sint32 widt
 	// todo - add tileMode param to this and the other lookup functions?
 	uint32 key = _getViewBucketKey(physAddr, width, height, pitch);
 	key %= TEXTURE_VIEW_BUCKETS;
+	const uint32 activeOwner = LatteTC_GetActiveOwner();
 	for (auto& it : texViewBucket[key].list)
 	{
+		if (it.ownerId != activeOwner)
+			continue;
 		if (it.format == format && it.dim == dim &&
 			it.width == width && it.height == height && it.pitch == pitch && it.physAddr == physAddr
 			&& it.firstMip == firstMip && it.numMip == numMip
@@ -168,8 +173,11 @@ LatteTextureView* LatteTextureViewLookupCache::lookupWithColorOrDepthType(MPTR p
 	cemu_assert_debug(firstSlice == 0);
 	uint32 key = _getViewBucketKey(physAddr, width, height, pitch);
 	key %= TEXTURE_VIEW_BUCKETS;
+	const uint32 activeOwner = LatteTC_GetActiveOwner();
 	for (auto& it : texViewBucket[key].list)
 	{
+		if (it.ownerId != activeOwner)
+			continue;
 		if (it.format == format && it.dim == dim && it.width == width && it.height == height && it.pitch == pitch && it.physAddr == physAddr
 			&& it.firstMip == firstMip && it.numMip == numMip
 			&& it.firstSlice == firstSlice && it.numSlice == numSlice &&
@@ -187,8 +195,11 @@ LatteTextureView* LatteTextureViewLookupCache::lookupSlice(MPTR physAddr, sint32
 {
 	uint32 key = _getViewBucketKey(physAddr, width, height, pitch);
 	key %= TEXTURE_VIEW_BUCKETS;
+	const uint32 activeOwner = LatteTC_GetActiveOwner();
 	for (auto& it : texViewBucket[key].list)
 	{
+		if (it.ownerId != activeOwner)
+			continue;
 		if (it.width == width && it.height == height && it.pitch == pitch && it.physAddr == physAddr && it.format == format)
 		{
 			if (firstSlice == it.firstSlice && firstMip == it.firstMip)
@@ -203,8 +214,11 @@ LatteTextureView* LatteTextureViewLookupCache::lookupSliceMinSize(MPTR physAddr,
 {
 	uint32 key = _getViewBucketKeyNoRes(physAddr, pitch);
 	key %= TEXTURE_VIEW_BUCKETS;
+	const uint32 activeOwner = LatteTC_GetActiveOwner();
 	for (auto& it : texViewBucket_nores[key].list)
 	{
+		if (it.ownerId != activeOwner)
+			continue;
 		if (it.width >= minWidth && it.height >= minHeight && it.pitch == pitch && it.physAddr == physAddr && it.format == format)
 		{
 			if (firstSlice == it.firstSlice && firstMip == it.firstMip)
@@ -220,8 +234,11 @@ LatteTextureView* LatteTextureViewLookupCache::lookupSliceEx(MPTR physAddr, sint
 	cemu_assert_debug(firstMip == 0);
 	uint32 key = _getViewBucketKey(physAddr, width, height, pitch);
 	key %= TEXTURE_VIEW_BUCKETS;
+	const uint32 activeOwner = LatteTC_GetActiveOwner();
 	for (auto& it : texViewBucket[key].list)
 	{
+		if (it.ownerId != activeOwner)
+			continue;
 		if (it.width == width && it.height == height && it.pitch == pitch && it.physAddr == physAddr && it.format == format && it.isDepth == isDepth)
 		{
 			if (firstSlice == it.firstSlice && firstMip == it.firstMip)

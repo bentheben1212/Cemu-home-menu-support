@@ -64,6 +64,8 @@ namespace CafeSystem
 	std::optional<sint32> GetForegroundTitleReturnStatus(); // valid once the foreground title exited gracefully via coreinit exit
 
 	void ShutdownTitle();
+	// shutdown for a switch to another title: a suspended title stays (and keeps the GPU thread, see CafeProcess)
+	void ShutdownTitleForSwitch();
 
 	// suspending a title (see CafeProcess): the title's state was set aside, unmount it and mark the system as stopped
 	// without the usual teardown. Reattach mounts it again (no executable is loaded, the title continues where it was)

@@ -730,7 +730,7 @@ namespace coreinit
 			if (titleId == CafeProcess::GetSuspendedTitleId())
 			{
 				// back to the suspended title (e.g. the HOME Menu closed): it continues where it was
-				CafeSystem::ShutdownTitle();
+				CafeSystem::ShutdownTitleForSwitch();
 				CafeSystem::RequestRecreateCanvas();
 				if (CafeProcess::ResumeSuspendedTitle())
 					return;
@@ -739,7 +739,7 @@ namespace coreinit
 			else if (TitleIdParser(titleId).GetType() != TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE)
 				CafeProcess::DiscardSuspendedTitle(); // another main app replaces it
 		}
-		CafeSystem::ShutdownTitle();
+		CafeSystem::ShutdownTitleForSwitch(); // a suspended title stays (an applet opened from the HOME Menu)
 		CafeSystem::PrepareForegroundTitle(titleId);
 		CafeSystem::RequestRecreateCanvas();
 		CafeSystem::LaunchForegroundTitle();

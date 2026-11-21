@@ -16,16 +16,23 @@ namespace CafeProcess
 
 	/* Suspend (Phase 2, step 1)
 	   The running title is frozen and set aside completely: its memory (remapped, see MMU), its host state (registered
-	   with CAFE_PROCESS_STATE), its threads and fibers. The scheduler and the GPU thread are stopped as on a title
-	   switch, but nothing of the title is destroyed. Another title can then be started normally. Resuming tears that
-	   title down and brings the suspended one back exactly where it was. Needs CEMU_PROCESS_MEMORY=shared (Linux) and is
-	   enabled for the HOME Menu with CEMU_PROCESS_SUSPEND=1 */
+	   with CAFE_PROCESS_STATE), its threads and fibers. The scheduler is stopped as on a title switch, but nothing of the
+	   title is destroyed. Another title can then be started normally. Resuming tears that title down and brings the
+	   suspended one back exactly where it was. Needs CEMU_PROCESS_MEMORY=shared (Linux) and is enabled for the HOME Menu
+	   with CEMU_PROCESS_SUSPEND=1.
+	   GPU: the GPU thread keeps running across the switch. The suspended title's cached textures and buffers (including
+	   images only the GPU drew) stay on the GPU under its cache owner id and are made active again on resume.
+	   CEMU_PROCESS_SUSPEND_GPU=restart stops and restarts the GPU thread instead (fallback) */
 	bool IsSuspendEnabled();
 	bool HasSuspendedTitle();
 	uint64 GetSuspendedTitleId();
 	bool SuspendForegroundTitle(); // call from a host thread, not from a PPC thread
 	bool ResumeSuspendedTitle(); // no title may be running (shut it down first)
 	void DiscardSuspendedTitle();
+	// title shutdown while a title is suspended: if true, the GPU thread is not stopped; ReleaseForegroundGPUState
+	// deletes the ending title's GPU caches instead (the suspended title's stay)
+	bool IsGPUKeptForSuspendedTitle();
+	void ReleaseForegroundGPUState();
 	// suspends the running title and launches another one in its place (e.g. the HOME Menu over the Wii U Menu)
 	void SuspendForegroundTitleAndLaunch(uint64 titleId);
 	// debug command: suspend the running title for the given time and resume it, without running anything in between

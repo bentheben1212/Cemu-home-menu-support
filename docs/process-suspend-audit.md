@@ -87,10 +87,24 @@ alongside it.
 
 ### GPU (Latte)
 Texture cache, buffer cache, texture views, render target state, active shaders, queries, readbacks, streamout are
-all keyed by guest physical address. Two options:
-1. Step 1: on swap, drain the GPU and invalidate the caches (textures re-upload on resume: a short hitch).
-2. Later: keep one cache set per process for an instant resume.
-Shader/pipeline caches (compiled code keyed by shader hash) are shared and stay.
+all keyed by guest physical address. Images only the GPU drew (render targets, render-to-texture such as the Wii U
+Menu's Mii icons) exist nowhere else, so restarting the GPU thread loses them.
+
+Implemented: the GPU thread keeps running across suspend and resume. Every cached texture carries the owner id of the
+title that created it (`LatteTexture::ownerId`, `LatteTC_SetActiveOwner`); view lookups, memory-overlap tracking and
+eviction only consider the active owner, so the frozen title's textures are neither found nor evicted while another
+title runs. The buffer cache (an interval tree, which can't hold one range twice) has one tree and node list per owner;
+the frozen owner's set is parked unchanged (`LatteBufferCache_SwitchOwner`). Switching owner also finishes readbacks
+and queries, clears the index cache and the shader state cache (keyed by shader program address) and resets the
+render target bindings (`Latte_SwitchCacheOwner`). This work runs on the GPU thread while it waits for commands
+(`Latte_RunOnGPUThreadWhenIdle`).
+- Suspend: park the title's caches and GPU registers, start the next title with initial GPU state.
+- Title switch while a title is suspended (`CafeSystem::ShutdownTitleForSwitch`): delete only the ending title's
+  textures and buffers, keep the GPU thread.
+- Resume: make the suspended title's caches active again and restore its registers. CPU writes recorded by texture
+  write tracking while the other title ran are dropped (they went to the other title's memory).
+- Fallback: `CEMU_PROCESS_SUSPEND_GPU=restart` stops and restarts the GPU thread (with a texture readback on exit).
+Shader and pipeline caches (compiled code keyed by shader hash) are shared and stay.
 
 ### Input and the rest
 `vpad` / `padscore` sampling callbacks and connection state, `nsysnet` sockets (Step 5), `nn_*` small states

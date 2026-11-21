@@ -4,6 +4,7 @@
 #include "HW/Latte/Core/LattePM4.h"
 #include "OS/libs/coreinit/coreinit_Time.h"
 #include "Common/CafeStaticVar.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 
 namespace TCL
 {
@@ -177,8 +178,13 @@ namespace TCL
 
 		void RPLMapped() override
 		{
-			tclRingBufferA_readIndex = 0;
-			tclRingBufferA_writeIndex = 0;
+			// the GPU thread may still be running (kept for a suspended title, see CafeProcess): its ring is empty then, and
+			// resetting the indices while it reads them could make it run old ring contents again
+			if (!Latte_IsRunning())
+			{
+				tclRingBufferA_readIndex = 0;
+				tclRingBufferA_writeIndex = 0;
+			}
 			s_rplData.Allocate();
 			cafeExportRegister("TCL", TCLSubmitToRing, LogType::Placeholder);
 			cafeExportRegister("TCL", TCLTimestamp, LogType::Placeholder);
