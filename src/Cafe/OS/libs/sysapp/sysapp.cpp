@@ -911,8 +911,18 @@ namespace sysapp
 		return 0;
 	}
 
-	// called by the Electronic Manual when it starts. Layout assumed to match EManualArgs (standard args, title id at +8)
-	uint32 _SYSGetEManualArgs(EManualArgs* argsOut)
+	// filled by _SYSGetEManualArgs. The manual reads the title id at +0x10 (a first test with it at +8 made it read
+	// uninitialized stack at +0x10). What +8 holds is unknown, left 0
+	struct EManualArgsOut
+	{
+		sysStandardArguments_t stdArgs;
+		uint64be ukn08;
+		uint64be titleId;
+	};
+	static_assert(sizeof(EManualArgsOut) == 0x18);
+
+	// called by the Electronic Manual when it starts
+	uint32 _SYSGetEManualArgs(EManualArgsOut* argsOut)
 	{
 		uint64 titleId = s_eManualRequestedTitleId;
 		if (titleId == 0)
@@ -920,7 +930,7 @@ namespace sysapp
 		cemuLog_log(LogType::Force, "_SYSGetEManualArgs(0x{:08x}) -> title {:016x} (LR 0x{:08x})", MEMPTR<void>(argsOut).GetMPTR(), titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
 		if (argsOut)
 		{
-			memset(argsOut, 0, sizeof(EManualArgs));
+			memset(argsOut, 0, sizeof(EManualArgsOut));
 			argsOut->titleId = titleId;
 		}
 		return 0;
