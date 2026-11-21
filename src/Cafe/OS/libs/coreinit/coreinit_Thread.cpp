@@ -3,6 +3,7 @@
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/OS/libs/coreinit/coreinit_GHS.h"
@@ -549,9 +550,9 @@ namespace coreinit
 		PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
 		hCPU->gpr[3] = exitValue;
 		OSThread_t* currentThread = coreinit::OSGetCurrentThread();
-		if (s_blockThreadsOnExit.load())
+		if (s_blockThreadsOnExit.load() && __OSIsProcessExiting())
 		{
-			cemuLog_log(LogType::Force, "OSExitThread: blocking thread {:08x} (\"{}\") after OSBlockThreadsOnExit", MEMPTR<OSThread_t>(currentThread).GetMPTR(), currentThread->threadName ? currentThread->threadName.GetPtr() : "");
+			cemuLog_log(LogType::Force, "OSExitThread: blocking thread {:08x} (\"{}\") (process is exiting, OSBlockThreadsOnExit was called)", MEMPTR<OSThread_t>(currentThread).GetMPTR(), currentThread->threadName ? currentThread->threadName.GetPtr() : "");
 			while (true)
 				OSSuspendThread(currentThread);
 		}
@@ -1192,15 +1193,17 @@ namespace coreinit
 		return previous;
 	}
 
-	// Called by titles while they shut down. Exact semantics unknown (decaf-emu doesn't implement it either); going by
-	// the name, threads that exit afterwards are blocked instead of exiting, so their stacks and held mutexes stay valid
-	// while the shutdown finishes. Without it the Electronic Manual crashed on exit: one of its threads exited holding
-	// mutexes, then the main thread used the freed data. Cemu tears down all threads when the process exits anyway
+	// Exact semantics unknown (decaf-emu doesn't implement it either). Going by the name: once the process is exiting,
+	// threads that exit are blocked instead, so their stacks and held mutexes stay valid while the shutdown finishes
+	// (without it the Electronic Manual crashed on exit: one of its threads exited holding mutexes, then the main thread
+	// used the freed data). Some titles (Internet Browser, Download Management) call it at startup, so it only sets a
+	// flag; threads are held only once the process has begun exiting (__OSIsProcessExiting). Cemu tears down all
+	// threads when the process exits anyway
 	std::atomic<bool> s_blockThreadsOnExit{false};
 
 	void OSBlockThreadsOnExit()
 	{
-		cemuLog_log(LogType::Force, "OSBlockThreadsOnExit(): threads that exit from now on are blocked");
+		cemuLog_log(LogType::Force, "OSBlockThreadsOnExit(): threads exiting during the process exit will be blocked{}", __OSIsProcessExiting() ? " (process is exiting)" : "");
 		s_blockThreadsOnExit = true;
 	}
 

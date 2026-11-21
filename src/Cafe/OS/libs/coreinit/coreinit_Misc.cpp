@@ -940,9 +940,19 @@ namespace coreinit
 	static std::atomic<bool> s_releaseForShutdownPending = false;
 	static std::atomic<bool> s_exitMessagePending = false;
 
+	// set once the process has begun exiting (exit requested by the system, or exit/_Exit/__PPCExit called). Cleared
+	// when the next process starts. Used by OSBlockThreadsOnExit, which only holds threads that exit during the exit
+	static std::atomic<bool> s_processExiting = false;
+
+	bool __OSIsProcessExiting()
+	{
+		return s_processExiting.load();
+	}
+
 	void __OSRequestProcessExit()
 	{
 		cemuLog_log(LogType::Force, "System: requesting process exit (ReleaseForeground -> Exit)");
+		s_processExiting = true;
 		s_exitRequested = true;
 		s_releaseForShutdownPending = true;
 	}
@@ -1261,6 +1271,7 @@ namespace coreinit
 	// ends the process. If a title switch was queued (e.g. by _SYSSwitchToMainApp) the queued title is launched instead
 	static void __ExitProcessOrSwitch(sint32 status)
 	{
+		s_processExiting = true;
 		if (s_forcedSwitchInProgress)
 		{
 			// the exit watchdog is already tearing down this process to switch titles, don't end emulation
@@ -1322,6 +1333,7 @@ namespace coreinit
 		s_transitionToBackground = false;
 		s_transitionToForeground = false;
 		s_exitRequested = false;
+		s_processExiting = false;
 		s_releaseForShutdownPending = false;
 		s_exitMessagePending = false;
 		s_homeCloseInProgress = false;
@@ -1380,6 +1392,7 @@ namespace coreinit
 	CAFE_PROCESS_STATE(s_transitionToBackground);
 	CAFE_PROCESS_STATE(s_transitionToForeground);
 	CAFE_PROCESS_STATE(s_exitRequested);
+	CAFE_PROCESS_STATE(s_processExiting);
 	CAFE_PROCESS_STATE(s_releaseForShutdownPending);
 	CAFE_PROCESS_STATE(s_exitMessagePending);
 	CAFE_PROCESS_STATE(s_homeButtonDown);
