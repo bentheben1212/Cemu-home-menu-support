@@ -257,8 +257,7 @@ bool Latte_GetStopSignal()
 
 std::atomic<bool> g_latteReadbackOnExit = false; // set by CafeProcess when suspending a title
 
-void LatteTextureReadback_StartTransfer(LatteTextureView* textureView);
-void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
+#include "Cafe/HW/Latte/Core/LatteTextureReadbackInfo.h"
 
 // suspending a title: images the GPU drew (render targets, render-to-texture results like the Wii U Menu's Mii
 // textures) exist only in host GPU memory. The GPU thread is restarted for the next title, so copy them back into the
@@ -266,7 +265,7 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
 static void LatteThread_ReadbackGPUWrittenTextures()
 {
 	auto start = std::chrono::steady_clock::now();
-	uint32 numTextures = 0, numViews = 0;
+	uint32 numTextures = 0, numSlices = 0, numFailed = 0, numAllZero = 0, numWithData = 0;
 	for (LatteTexture* texture : LatteTexture::GetAllTextures())
 	{
 		if (!texture || !texture->isUpdatedOnGPU || texture->isDepth)
@@ -276,20 +275,55 @@ static void LatteThread_ReadbackGPUWrittenTextures()
 		if (texture->dim == Latte::E_DIM::DIM_3D)
 			continue;
 		numTextures++;
-		uint32 numSlices = std::max<uint32>(1, texture->depth);
-		for (uint32 slice = 0; slice < numSlices; slice++)
+		uint32 sliceCount = std::max<uint32>(1, texture->depth);
+		for (uint32 slice = 0; slice < sliceCount; slice++)
 		{
 			LatteTextureView* view = texture->GetOrCreateView(0, 1, slice, 1);
 			if (!view)
 				continue;
-			LatteTextureReadback_StartTransfer(view);
-			numViews++;
+			numSlices++;
+			// synchronous transfer per slice (the queued path gives no feedback)
+			LatteTextureReadbackInfo* info = g_renderer->texture_createReadback(view);
+			if (!info)
+			{
+				numFailed++;
+				continue;
+			}
+			info->StartTransfer();
+			info->ForceFinish();
+			if (!info->IsFinished())
+			{
+				numFailed++;
+				delete info;
+				continue;
+			}
+			uint8* data = info->GetData();
+			bool allZero = true;
+			uint32 checkSize = std::min<uint32>(info->m_rowPitch * std::max<uint32>(1, texture->height), 4 * 1024 * 1024);
+			for (uint32 i = 0; data && i < checkSize; i++)
+			{
+				if (data[i] != 0)
+				{
+					allZero = false;
+					break;
+				}
+			}
+			if (allZero)
+				numAllZero++;
+			else
+			{
+				numWithData++;
+				if (numWithData <= 8)
+					cemuLog_log(LogType::Force, "Process:   readback {:08x} {}x{} fmt {:04x} tm {} slice {}: has data", texture->physAddress, texture->width, texture->height, (uint32)texture->format, (uint32)texture->tileMode, slice);
+			}
+			if (data)
+				LatteTextureLoader_writeReadbackTextureToMemory(&info->hostTextureCopy, info->m_firstSlice, info->m_firstMip, data, info->m_rowPitch);
+			info->ReleaseData();
+			delete info;
 		}
-		LatteTextureReadback_UpdateFinishedTransfers(false); // keep the number of transfers in flight low
 	}
-	LatteTextureReadback_UpdateFinishedTransfers(true);
 	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-	cemuLog_log(LogType::Force, "Process: copied {} GPU-written textures ({} slices) back to the title's memory in {} ms", numTextures, numViews, ms);
+	cemuLog_log(LogType::Force, "Process: copied {} GPU-written textures ({} slices: {} with data, {} all zero, {} failed) back to the title's memory in {} ms", numTextures, numSlices, numWithData, numAllZero, numFailed, ms);
 }
 
 void LatteThread_Exit()
