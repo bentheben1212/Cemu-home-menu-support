@@ -95,6 +95,13 @@ uint8* RPLLoader_AllocateTrampolineCodeSpace(sint32 size)
 	return RPLLoader_AllocateTrampolineCodeSpace(nullptr, size);
 }
 
+// a resumed title (see CafeProcess) loads no modules, so the recompiler lookup tables for its code are set up here
+void RPLLoader_ReserveRecompilerRangesForLoadedCode()
+{
+	if (rplLoader_maxCodeAddress > MEMORY_CODEAREA_ADDR)
+		PPCRecompiler_allocateRange(MEMORY_CODEAREA_ADDR, rplLoader_maxCodeAddress - MEMORY_CODEAREA_ADDR);
+}
+
 MPTR RPLLoader_AllocateCodeSpace(uint32 size, uint32 alignment)
 {
 	cemu_assert_debug((alignment & (alignment - 1)) == 0); // alignment must be a power of 2

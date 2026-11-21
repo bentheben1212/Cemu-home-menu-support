@@ -14,6 +14,7 @@
 #include "util/helpers/helpers.h"
 
 extern std::vector<uint32> g_latteResumeContextRegisters; // LatteThread.cpp
+void RPLLoader_ReserveRecompilerRangesForLoadedCode(); // rpl.cpp
 
 namespace CafeProcess
 {
@@ -307,6 +308,7 @@ namespace CafeProcess
 		_RestoreEntries(suspended->generalState);
 		if (CafeSystem::ReattachSuspendedTitle(suspended->titleId) != CafeSystem::PREPARE_STATUS_CODE::SUCCESS)
 			cemuLog_log(LogType::Force, "Process: unable to mount {:016x} again", suspended->titleId);
+		RPLLoader_ReserveRecompilerRangesForLoadedCode(); // the recompiler was reinitialized, nothing is loaded again
 		_RestoreLatteState(suspended->latte);
 		Latte_Start();
 		GraphicPack2::ActivateForCurrentTitle();
