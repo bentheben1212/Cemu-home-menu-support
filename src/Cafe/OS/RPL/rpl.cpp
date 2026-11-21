@@ -2676,7 +2676,16 @@ void RPLLoader_UnloadAll()
 }
 
 // per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
-CAFE_PROCESS_STATE(g_heapTrampolineArea);
+// the trampoline allocator's base heap is set once at startup (RPLLoader_InitState): keep it when resetting
+static CafeProcess::StateCallbacks s_heapTrampolineAreaState("g_heapTrampolineArea", CafeProcess::StatePhase::General,
+	[]() -> void* {
+		auto* saved = new ChunkedFlatAllocator<64 * 1024>(g_heapTrampolineArea);
+		g_heapTrampolineArea = ChunkedFlatAllocator<64 * 1024>();
+		g_heapTrampolineArea.setBaseAllocator(&rplLoaderHeap_lowerAreaCodeMem2);
+		return saved;
+	},
+	[](void* p) { g_heapTrampolineArea = *(ChunkedFlatAllocator<64 * 1024>*)p; delete (ChunkedFlatAllocator<64 * 1024>*)p; },
+	[](void* p) { delete (ChunkedFlatAllocator<64 * 1024>*)p; });
 CAFE_PROCESS_STATE(s_rplDependencyList);
 CAFE_PROCESS_STATE(s_rplModuleList);
 CAFE_PROCESS_STATE(rplLoader_applicationHasMemoryControl);

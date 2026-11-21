@@ -597,9 +597,9 @@ public:
 	void swapState(VHeap& other)
 	{
 		cemu_assert(m_heapSize == other.m_heapSize);
+		// the heap base stays: every process uses the same guest addresses, and it is set once at startup
 		std::swap(bucketFreeRange, other.bucketFreeRange);
 		map_allocatedRange.swap(other.map_allocatedRange);
-		std::swap(m_heapBase, other.m_heapBase);
 		std::swap(m_statsMemAllocated, other.m_statsMemAllocated);
 	}
 
