@@ -360,6 +360,20 @@ void memory_mapForCurrentTitle()
 	}
 }
 
+// maps the standard ranges a title needs that aren't mapped (resuming a suspended title: the shared ranges like the
+// locked caches, the foreground bucket and the tiling aperture were unmapped by the other title's shutdown)
+void memory_mapMissingTitleRanges()
+{
+	for (auto& itr : g_mmuRanges)
+	{
+		if (!itr->isOptional() && !itr->isMappedEarly() && !itr->isMapped())
+		{
+			itr->resetConfig();
+			itr->mapMem();
+		}
+	}
+}
+
 void memory_unmapForCurrentTitle()
 {
     for (auto& itr : g_mmuRanges)

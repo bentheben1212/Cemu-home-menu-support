@@ -307,6 +307,7 @@ namespace CafeProcess
 		std::unique_ptr<SuspendedTitle> suspended = std::move(s_suspended);
 		memory_attachProcessMemory(suspended->memory);
 		suspended->memory = nullptr;
+		memory_mapMissingTitleRanges(); // shared ranges (locked caches, FG bucket, tiling aperture) unmapped by the other title's shutdown
 		CafeStaticData::RestoreCOSState(suspended->cosStaticData);
 		suspended->cosStaticData = nullptr;
 		_RestoreEntries(suspended->generalState);
