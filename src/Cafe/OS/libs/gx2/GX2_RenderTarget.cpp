@@ -135,6 +135,13 @@ void gx2Export_GX2InitDepthBufferRegs(PPCInterpreter_t* hCPU)
 void gx2Export_GX2SetColorBuffer(PPCInterpreter_t* hCPU)
 {
 	cemuLog_log(LogType::GX2, "GX2SetColorBuffer(0x{:08x}, {})", hCPU->gpr[3], hCPU->gpr[4]);
+	if (hCPU->gpr[3] == 0)
+	{
+		// the Electronic Manual does this while shutting down after its GX2 resources are gone. Ignore instead of crashing
+		cemuLog_logOnce(LogType::Force, "GX2SetColorBuffer: null color buffer ignored (LR 0x{:08x})", hCPU->spr.LR);
+		osLib_returnFromFunction(hCPU, 0);
+		return;
+	}
 	GX2::GX2ReserveCmdSpace(20);
 
 	GX2ColorBuffer* colorBufferBE = (GX2ColorBuffer*)memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
@@ -198,6 +205,12 @@ void gx2Export_GX2SetColorBuffer(PPCInterpreter_t* hCPU)
 void gx2Export_GX2SetDepthBuffer(PPCInterpreter_t* hCPU)
 {
 	cemuLog_log(LogType::GX2, "GX2SetDepthBuffer(0x{:08x})", hCPU->gpr[3]);
+	if (hCPU->gpr[3] == 0)
+	{
+		cemuLog_logOnce(LogType::Force, "GX2SetDepthBuffer: null depth buffer ignored (LR 0x{:08x})", hCPU->spr.LR);
+		osLib_returnFromFunction(hCPU, 0);
+		return;
+	}
 	GX2::GX2ReserveCmdSpace(20);
 
 	GX2DepthBuffer* depthBufferBE = (GX2DepthBuffer*)memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
