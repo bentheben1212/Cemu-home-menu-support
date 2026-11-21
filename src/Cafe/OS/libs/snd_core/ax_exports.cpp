@@ -680,4 +680,5 @@ namespace snd_core
 namespace snd_core
 {
 	CAFE_PROCESS_STATE(sndGeneric);
+	CAFE_PROCESS_STATE(s_mappedSoundModules); // snd_core and sndcore2 share their static data: the first one mapped allocates it
 }
