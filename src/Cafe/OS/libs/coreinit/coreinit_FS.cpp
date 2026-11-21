@@ -170,7 +170,10 @@ namespace coreinit
 
 		FSCVirtualFile* fscDeviceOpenByPath(std::string_view path, FSC_ACCESS_FLAG accessFlags, void* ctx, sint32* fscStatus) override
 		{
-			return fsc_open(_Join(ctx, path).c_str(), accessFlags, fscStatus);
+			std::string fullPath = _Join(ctx, path);
+			FSCVirtualFile* file = fsc_open(fullPath.c_str(), accessFlags, fscStatus);
+			cemuLog_log(LogType::Force, "FSBindMount: open \"{}\" -> \"{}\" {}", path, fullPath, file ? "ok" : "NOT FOUND");
+			return file;
 		}
 
 		bool fscDeviceCreateDir(std::string_view path, void* ctx, sint32* fscStatus) override
