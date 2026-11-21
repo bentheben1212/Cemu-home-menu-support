@@ -14,6 +14,7 @@
 #include "util/helpers/helpers.h"
 
 extern std::vector<uint32> g_latteResumeContextRegisters; // LatteThread.cpp
+extern std::atomic<bool> g_latteReadbackOnExit; // LatteThread.cpp
 void RPLLoader_ReserveRecompilerRangesForLoadedCode(); // rpl.cpp
 
 namespace CafeProcess
@@ -280,6 +281,7 @@ namespace CafeProcess
 		s_frozen = false;
 		// snapshot the GPU state before stopping the GPU thread: its exit clears LatteGPUState completely
 		_SaveLatteState(suspended->latte);
+		g_latteReadbackOnExit = true; // the GPU thread copies GPU-drawn textures back to the title's memory before it exits
 		Latte_Stop();
 		_SaveEntries(StatePhase::General, suspended->generalState);
 		suspended->cosStaticData = CafeStaticData::SaveCOSState();

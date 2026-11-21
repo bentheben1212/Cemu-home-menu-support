@@ -255,8 +255,47 @@ bool Latte_GetStopSignal()
 	return !sLatteThreadRunning;
 }
 
+std::atomic<bool> g_latteReadbackOnExit = false; // set by CafeProcess when suspending a title
+
+void LatteTextureReadback_StartTransfer(LatteTextureView* textureView);
+void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
+
+// suspending a title: images the GPU drew (render targets, render-to-texture results like the Wii U Menu's Mii
+// textures) exist only in host GPU memory. The GPU thread is restarted for the next title, so copy them back into the
+// title's memory first; on resume they are reloaded from there like any other texture
+static void LatteThread_ReadbackGPUWrittenTextures()
+{
+	auto start = std::chrono::steady_clock::now();
+	uint32 numTextures = 0, numViews = 0;
+	for (LatteTexture* texture : LatteTexture::GetAllTextures())
+	{
+		if (!texture || !texture->isUpdatedOnGPU || texture->isDepth)
+			continue;
+		if (texture->overwriteInfo.hasResolutionOverwrite)
+			continue; // readback doesn't support resized textures
+		if (texture->dim == Latte::E_DIM::DIM_3D)
+			continue;
+		numTextures++;
+		uint32 numSlices = std::max<uint32>(1, texture->depth);
+		for (uint32 slice = 0; slice < numSlices; slice++)
+		{
+			LatteTextureView* view = texture->GetOrCreateView(0, 1, slice, 1);
+			if (!view)
+				continue;
+			LatteTextureReadback_StartTransfer(view);
+			numViews++;
+		}
+		LatteTextureReadback_UpdateFinishedTransfers(false); // keep the number of transfers in flight low
+	}
+	LatteTextureReadback_UpdateFinishedTransfers(true);
+	auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+	cemuLog_log(LogType::Force, "Process: copied {} GPU-written textures ({} slices) back to the title's memory in {} ms", numTextures, numViews, ms);
+}
+
 void LatteThread_Exit()
 {
+	if (g_latteReadbackOnExit.exchange(false) && g_renderer)
+		LatteThread_ReadbackGPUWrittenTextures();
 	if (g_renderer)
 		g_renderer->Shutdown();
     // clean up vertex/uniform cache
