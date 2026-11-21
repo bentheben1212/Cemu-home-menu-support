@@ -541,11 +541,19 @@ namespace coreinit
 		return true;
 	}
 
+	extern std::atomic<bool> s_blockThreadsOnExit;
+
 	void OSExitThread(sint32 exitValue)
 	{
 		PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
 		hCPU->gpr[3] = exitValue;
 		OSThread_t* currentThread = coreinit::OSGetCurrentThread();
+		if (s_blockThreadsOnExit.load())
+		{
+			cemuLog_log(LogType::Force, "OSExitThread: blocking thread {:08x} (\"{}\") after OSBlockThreadsOnExit", MEMPTR<OSThread_t>(currentThread).GetMPTR(), currentThread->threadName ? currentThread->threadName.GetPtr() : "");
+			while (true)
+				OSSuspendThread(currentThread);
+		}
 
 		// thread cleanup callback
 		if (currentThread->cleanupCallback)
@@ -1183,11 +1191,16 @@ namespace coreinit
 		return previous;
 	}
 
-	// Semantics unknown. Cemu tears down all guest threads itself when the process exits or switches title,
-	// so there is nothing to block here
+	// Called by titles while they shut down. Exact semantics unknown (decaf-emu doesn't implement it either); going by
+	// the name, threads that exit afterwards are blocked instead of exiting, so their stacks and held mutexes stay valid
+	// while the shutdown finishes. Without it the Electronic Manual crashed on exit: one of its threads exited holding
+	// mutexes, then the main thread used the freed data. Cemu tears down all threads when the process exits anyway
+	std::atomic<bool> s_blockThreadsOnExit{false};
+
 	void OSBlockThreadsOnExit()
 	{
-		cemuLog_logOnce(LogType::Force, "OSBlockThreadsOnExit() - no-op");
+		cemuLog_log(LogType::Force, "OSBlockThreadsOnExit(): threads that exit from now on are blocked");
+		s_blockThreadsOnExit = true;
 	}
 
     void OSCancelThread(OSThread_t* thread)
@@ -1413,6 +1426,7 @@ namespace coreinit
 
     void __OSDeleteAllActivePPCThreads()
     {
+		s_blockThreadsOnExit = false; // process is gone, the next one starts unblocked
         __OSLockScheduler();
 		while(!s_activeThreads.empty())
         {
