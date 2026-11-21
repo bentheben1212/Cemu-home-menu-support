@@ -154,8 +154,73 @@ namespace coreinit
 		return FS_RESULT::SUCCESS;
 	}
 
+	// FSC device that forwards every access to another path in the FSC tree. Used by FSBindMount for /vol/... sources
+	// (e.g. the Electronic Manual binds the meta folder of the title whose manual it shows)
+	class fscDeviceBindAliasC : public fscDeviceC
+	{
+	  public:
+		static std::string _Join(void* ctx, std::string_view path)
+		{
+			std::string fullPath = *(std::string*)ctx;
+			if (!path.empty() && path.front() != '/')
+				fullPath.push_back('/');
+			fullPath.append(path);
+			return fullPath;
+		}
+
+		FSCVirtualFile* fscDeviceOpenByPath(std::string_view path, FSC_ACCESS_FLAG accessFlags, void* ctx, sint32* fscStatus) override
+		{
+			return fsc_open(_Join(ctx, path).c_str(), accessFlags, fscStatus);
+		}
+
+		bool fscDeviceCreateDir(std::string_view path, void* ctx, sint32* fscStatus) override
+		{
+			return fsc_createDir(_Join(ctx, path).c_str(), fscStatus);
+		}
+
+		bool fscDeviceRemoveFileOrDir(std::string_view path, void* ctx, sint32* fscStatus) override
+		{
+			return fsc_remove(_Join(ctx, path).c_str(), fscStatus);
+		}
+
+		bool fscDeviceRename(std::string_view srcPath, std::string_view dstPath, void* ctx, sint32* fscStatus) override
+		{
+			return fsc_rename(_Join(ctx, srcPath).c_str(), _Join(ctx, dstPath).c_str(), fscStatus);
+		}
+	};
+	static fscDeviceBindAliasC s_fscDeviceBindAlias;
+	static std::map<std::string, std::unique_ptr<std::string>> s_bindAliasTargets; // mount path -> source path
+
 	FS_RESULT FSBindMount(FSClient_t* fsClient, FSCmdBlock_t* fsCmdBlock, char* mountPathSrc, char* mountPathOut, FS_ERROR_MASK errMask)
 	{
+		cemuLog_log(LogType::Force, "FSBindMount(\"{}\" -> \"{}\")", mountPathSrc, mountPathOut);
+		if (strncmp(mountPathSrc, "/vol/", 5) == 0)
+		{
+			std::string src = mountPathSrc;
+			while (src.size() > 1 && src.back() == '/')
+				src.pop_back();
+			std::string dst = mountPathOut;
+			while (dst.size() > 1 && dst.back() == '/')
+				dst.pop_back();
+			if (!fsc_doesDirectoryExist(src.c_str()))
+			{
+				cemuLog_log(LogType::Force, "FSBindMount: source \"{}\" does not exist", src);
+				return FS_RESULT::NOT_FOUND;
+			}
+			if (auto it = s_bindAliasTargets.find(dst); it != s_bindAliasTargets.end())
+			{
+				fsc_unmount(dst, FSC_PRIORITY_REDIRECT);
+				s_bindAliasTargets.erase(it);
+			}
+			auto target = std::make_unique<std::string>(src);
+			if (fsc_mount(dst, "", &s_fscDeviceBindAlias, target.get(), FSC_PRIORITY_REDIRECT) != FSC_STATUS_OK)
+			{
+				cemuLog_log(LogType::Force, "FSBindMount: mounting \"{}\" failed", dst);
+				return FS_RESULT::ERR_PLACEHOLDER;
+			}
+			s_bindAliasTargets.emplace(dst, std::move(target));
+			return FS_RESULT::SUCCESS;
+		}
 		if (strcmp(mountPathSrc, "/dev/sdcard01") == 0)
 		{
 			if (_sdCard01Mounted)

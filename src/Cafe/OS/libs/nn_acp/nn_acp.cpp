@@ -308,6 +308,24 @@ namespace acp
 		osLib_returnFromFunction(hCPU, 0);
 	}
 
+	// ACPGetTitleMetaDir(titleId, path, pathSize). Used by the Electronic Manual, which then binds the folder with FSBindMount
+	void export_ACPGetTitleMetaDir(PPCInterpreter_t* hCPU)
+	{
+		ppcDefineParamU64(titleId, 0);
+		ppcDefineParamStr(path, 2);
+		ppcDefineParamU32(pathSize, 3);
+		const char* storage = (((titleId >> 32) & 0xFF) == 0x10 || ((titleId >> 32) & 0xFF) == 0x30) ? "sys" : "usr";
+		std::string metaDir = fmt::format("/vol/storage_mlc01/{}/title/{:08x}/{:08x}/meta", storage, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
+		cemuLog_log(LogType::Force, "ACPGetTitleMetaDir({:016x}) -> \"{}\"", titleId, metaDir);
+		if (path == nullptr || pathSize <= metaDir.size())
+		{
+			osLib_returnFromFunction(hCPU, (uint32)-1);
+			return;
+		}
+		strcpy(path, metaDir.c_str());
+		osLib_returnFromFunction(hCPU, 0);
+	}
+
 	void export_ACPGetTitleMetaDirByDevice(PPCInterpreter_t* hCPU)
 	{
 		ppcDefineParamU64(titleId, 0);
@@ -422,6 +440,7 @@ namespace acp
 			osLib_addFunction("nn_acp", "ACPGetTitleInfoOfMainApplication", export_ACPGetTitleInfoOfMainApplication);
 
 			osLib_addFunction("nn_acp", "ACPGetTitleMetaDirByDevice", export_ACPGetTitleMetaDirByDevice);
+			osLib_addFunction("nn_acp", "ACPGetTitleMetaDir", export_ACPGetTitleMetaDir);
 			osLib_addFunction("nn_acp", "ACPGetTitleMetaXmlByDevice", export_ACPGetTitleMetaXmlByDevice);
 			cafeExportRegister("nn_acp", ACPGetTitleMetaXml, LogType::Placeholder);
 
