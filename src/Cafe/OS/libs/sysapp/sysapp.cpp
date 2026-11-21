@@ -903,6 +903,14 @@ namespace sysapp
 		_SYSSwitchToTitle("_SYSSwitchToEManual", eManualTitleId);
 	}
 
+	// called by the HOME Menu's Manual button. Arguments not documented (logged): opens the manual of the main app
+	uint32 _SYSSwitchToEManualFromHBM(uint32 arg0, uint32 arg1, uint32 arg2)
+	{
+		cemuLog_log(LogType::Force, "_SYSSwitchToEManualFromHBM(0x{:08x}, 0x{:08x}, 0x{:08x}) (LR 0x{:08x})", arg0, arg1, arg2, PPCInterpreter_getCurrentInstance()->spr.LR);
+		_SYSSwitchToEManual(nullptr);
+		return 0;
+	}
+
 	// called by the Electronic Manual when it starts. Layout assumed to match EManualArgs (standard args, title id at +8)
 	uint32 _SYSGetEManualArgs(EManualArgs* argsOut)
 	{
@@ -946,6 +954,7 @@ namespace sysapp
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSGetEManualArgs, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSSwitchToEManualFromHBM, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEShop, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEShop, LogType::Placeholder);
 	}
