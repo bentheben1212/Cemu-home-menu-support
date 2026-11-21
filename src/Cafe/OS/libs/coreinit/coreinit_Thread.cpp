@@ -550,9 +550,9 @@ namespace coreinit
 		PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
 		hCPU->gpr[3] = exitValue;
 		OSThread_t* currentThread = coreinit::OSGetCurrentThread();
-		if (s_blockThreadsOnExit.load() && __OSIsProcessExiting())
+		if (s_blockThreadsOnExit.load() && __OSIsProcessExiting() && !currentThread->mutexQueue.isEmpty())
 		{
-			cemuLog_log(LogType::Force, "OSExitThread: blocking thread {:08x} (\"{}\") (process is exiting, OSBlockThreadsOnExit was called)", MEMPTR<OSThread_t>(currentThread).GetMPTR(), currentThread->threadName ? currentThread->threadName.GetPtr() : "");
+			cemuLog_log(LogType::Force, "OSExitThread: blocking thread {:08x} (\"{}\"), it exits holding mutexes while the process is exiting (OSBlockThreadsOnExit was called)", MEMPTR<OSThread_t>(currentThread).GetMPTR(), currentThread->threadName ? currentThread->threadName.GetPtr() : "");
 			while (true)
 				OSSuspendThread(currentThread);
 		}
@@ -1193,12 +1193,12 @@ namespace coreinit
 		return previous;
 	}
 
-	// Exact semantics unknown (decaf-emu doesn't implement it either). Going by the name: once the process is exiting,
-	// threads that exit are blocked instead, so their stacks and held mutexes stay valid while the shutdown finishes
-	// (without it the Electronic Manual crashed on exit: one of its threads exited holding mutexes, then the main thread
-	// used the freed data). Some titles (Internet Browser, Download Management) call it at startup, so it only sets a
-	// flag; threads are held only once the process has begun exiting (__OSIsProcessExiting). Cemu tears down all
-	// threads when the process exits anyway
+	// Exact semantics unknown (decaf-emu doesn't implement it either). Some titles (Internet Browser, Download Management)
+	// call it at startup, so it only sets a flag. During the process exit, a thread that exits while still holding
+	// mutexes is blocked instead, so its stack and the data its mutexes protect stay valid while the shutdown finishes
+	// (the Electronic Manual crashed on exit without this). Threads that exit cleanly are not held: the Browser and
+	// Download Management wait for their worker threads to finish during their exit. Cemu tears down all threads when
+	// the process exits anyway
 	std::atomic<bool> s_blockThreadsOnExit{false};
 
 	void OSBlockThreadsOnExit()
