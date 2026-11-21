@@ -125,4 +125,24 @@ namespace MemMapper
 		// put an inaccessible anonymous reservation back in place (same state as after ReserveMemory)
 		mmap(baseAddr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 	}
+
+	std::vector<std::pair<size_t, size_t>> GetSharedMemoryWrittenRanges(SharedMemoryHandle handle, size_t size)
+	{
+		std::vector<std::pair<size_t, size_t>> ranges;
+#if __linux__ && defined(SEEK_DATA)
+		off_t pos = 0;
+		while ((size_t)pos < size)
+		{
+			off_t dataStart = lseek((int)handle, pos, SEEK_DATA);
+			if (dataStart < 0)
+				break;
+			off_t dataEnd = lseek((int)handle, dataStart, SEEK_HOLE);
+			if (dataEnd < 0)
+				dataEnd = (off_t)size;
+			ranges.emplace_back((size_t)dataStart, (size_t)(dataEnd - dataStart));
+			pos = dataEnd;
+		}
+#endif
+		return ranges;
+	}
 };

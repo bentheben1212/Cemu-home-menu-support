@@ -35,4 +35,6 @@ namespace MemMapper
 	bool MapSharedMemory(SharedMemoryHandle handle, void* baseAddr, size_t size, PAGE_PERMISSION permissionFlags);
 	// replaces a shared memory mapping inside a reservation with an inaccessible reserved range again
 	void UnmapSharedMemory(void* baseAddr, size_t size);
+	// pages of the shared memory object that were ever written (offset, size). Empty if not supported (debugging aid)
+	std::vector<std::pair<size_t, size_t>> GetSharedMemoryWrittenRanges(SharedMemoryHandle handle, size_t size);
 };

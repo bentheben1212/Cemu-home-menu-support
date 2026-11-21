@@ -206,6 +206,18 @@ void memory_attachProcessMemory(MMUProcessMemory* processMemory)
 			MemMapper::CloseSharedMemory(entry.handle);
 			continue;
 		}
+		// debugging aid: anything written to the stand-in memory while the process was swapped out was written by
+		// something other than the (frozen) process, e.g. host code updating guest structures. Those writes are lost
+		auto written = MemMapper::GetSharedMemoryWrittenRanges(range->m_sharedMemory, entry.size);
+		if (!written.empty())
+		{
+			size_t total = 0;
+			for (auto& w : written)
+				total += w.second;
+			cemuLog_log(LogType::Force, "MMU: {} was written while swapped out: {} bytes in {} ranges", range->name, total, written.size());
+			for (size_t i = 0; i < written.size() && i < 16; i++)
+				cemuLog_log(LogType::Force, "MMU:   0x{:08x} - 0x{:08x}", range->baseAddress + (uint32)written[i].first, range->baseAddress + (uint32)(written[i].first + written[i].second));
+		}
 		MemMapper::CloseSharedMemory(range->m_sharedMemory);
 		range->m_sharedMemory = entry.handle;
 	}

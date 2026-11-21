@@ -85,4 +85,9 @@ namespace MemMapper
 	void UnmapSharedMemory(void* baseAddr, size_t size)
 	{
 	}
+
+	std::vector<std::pair<size_t, size_t>> GetSharedMemoryWrittenRanges(SharedMemoryHandle handle, size_t size)
+	{
+		return {};
+	}
 };

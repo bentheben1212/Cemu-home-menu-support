@@ -293,34 +293,23 @@ namespace acp
 		osLib_returnFromFunction(hCPU, 0);
 	}
 
-	// used by the HOME Menu. Three output pointers: title id, then two words (assumed: device type, unknown)
+	// used by the HOME Menu. Three output pointers: title id, ACP device type (1 = internal), UPID (assumed)
 	void export_ACPGetTitleInfoOfMainApplication(PPCInterpreter_t* hCPU)
 	{
 		ppcDefineParamTypePtr(titleId, uint64be, 0);
 		ppcDefineParamTypePtr(outUkn1, uint32be, 1);
 		ppcDefineParamTypePtr(outUkn2, uint32be, 2);
 		uint64 mainTitleId = _GetMainApplicationTitleId();
-		if (_SYSGetUPIDFromTitleId(mainTitleId) == 2)
-		{
-			// opened over the Wii U Menu: on a console the menu isn't suspended software, the HOME Menu shows
-			// "You have no suspended software". Report no main application (error code is a guess: ACP not found)
-			if (titleId)
-				*titleId = 0;
-			if (outUkn1)
-				*outUkn1 = 0;
-			if (outUkn2)
-				*outUkn2 = 0;
-			cemuLog_log(LogType::Force, "ACPGetTitleInfoOfMainApplication -> none (main app is the Wii U Menu)");
-			osLib_returnFromFunction(hCPU, (uint32)-500);
-			return;
-		}
 		if (titleId)
 			*titleId = mainTitleId;
 		if (outUkn1)
 			*outUkn1 = 1; // device type, the HOME Menu passes 1 for titles on internal storage
+		// third output assumed to be the main app's UPID: 2 (Wii U Menu) makes the HOME Menu show "You have no suspended
+		// software". Returning no title and an error code instead didn't work (it showed an empty suspended software box)
+		sint32 upid = _SYSGetUPIDFromTitleId(mainTitleId);
 		if (outUkn2)
-			*outUkn2 = 0;
-		cemuLog_log(LogType::Force, "ACPGetTitleInfoOfMainApplication -> {:016x} (out 0x{:08x} 0x{:08x} 0x{:08x})", mainTitleId, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5]);
+			*outUkn2 = upid >= 0 ? (uint32)upid : 15;
+		cemuLog_log(LogType::Force, "ACPGetTitleInfoOfMainApplication -> {:016x}, device 1, upid {} (out 0x{:08x} 0x{:08x} 0x{:08x})", mainTitleId, upid, hCPU->gpr[3], hCPU->gpr[4], hCPU->gpr[5]);
 		osLib_returnFromFunction(hCPU, 0);
 	}
 
