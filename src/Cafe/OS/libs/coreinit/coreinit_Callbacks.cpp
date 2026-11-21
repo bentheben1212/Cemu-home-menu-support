@@ -1,4 +1,5 @@
 #include "Cafe/OS/libs/coreinit/coreinit.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "util/helpers/fspinlock.h"
 #include "Common/CafeStaticVar.h"
@@ -74,6 +75,7 @@ private:
 		s_asyncCallbackPool.emplace_back(cb);
 	}
 
+public: // registered as per-process state
 	static std::vector<struct CoreinitAsyncCallback*> s_asyncCallbackPool;
 	static std::vector<struct CoreinitAsyncCallback*> s_asyncCallbackQueue;
 	static FSpinlock s_asyncCallbackSpinlock;
@@ -137,3 +139,8 @@ void ResetAsyncCallback()
 {
 	CoreinitAsyncCallback::Reset();
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(CoreinitAsyncCallback::s_asyncCallbackPool);
+CAFE_PROCESS_STATE(CoreinitAsyncCallback::s_asyncCallbackQueue);
+CAFE_PROCESS_STATE(CoreinitAsyncCallback::s_activeCallback);

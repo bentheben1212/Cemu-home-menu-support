@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "GX2.h"
 #include "GX2_Resource.h"
@@ -75,3 +76,7 @@ namespace GX2
 		osLib_addFunction("gx2", "GX2SetDefaultAllocator", gx2Export_GX2SetDefaultAllocator);
 	}
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(gx2Mem_defaultAlloc);
+CAFE_PROCESS_STATE(gx2Mem_defaultFree);

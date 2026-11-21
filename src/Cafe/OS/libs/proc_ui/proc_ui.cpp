@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MessageQueue.h"
@@ -934,3 +935,41 @@ namespace proc_ui
 	}
 
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace proc_ui
+{
+	CAFE_PROCESS_STATE(s_isInitialized);
+	CAFE_PROCESS_STATE(s_isInForeground);
+	CAFE_PROCESS_STATE(s_isInShutdown);
+	CAFE_PROCESS_STATE(s_isForegroundProcess);
+	CAFE_PROCESS_STATE(s_previouslyWasBlocking);
+	CAFE_PROCESS_STATE(s_currentProcUIStatus);
+	CAFE_PROCESS_STATE(s_saveCallback);
+	CAFE_PROCESS_STATE(s_saveCallbackEx);
+	CAFE_PROCESS_STATE(s_saveCallbackExUserParam);
+	CAFE_PROCESS_STATE(s_systemMessageQueuePtr);
+	CAFE_PROCESS_STATE(s_coreThreadStackSize);
+	CAFE_PROCESS_STATE(s_coreThreadsCreated);
+	CAFE_PROCESS_STATE(s_commandForCoreThread);
+	CAFE_PROCESS_STATE(s_coreThreadStackPerCore);
+	CAFE_PROCESS_STATE(s_backgroundThreadStack);
+	CAFE_PROCESS_STATE(s_memoryPoolHeapPtr);
+	CAFE_PROCESS_STATE(s_memAllocPtr);
+	CAFE_PROCESS_STATE(s_memFreePtr);
+	CAFE_PROCESS_STATE(s_drawDoneReleaseCalled);
+	CAFE_PROCESS_STATE(s_bucketStorageBasePtr);
+	CAFE_PROCESS_STATE(s_mem1StorageBasePtr);
+	CAFE_PROCESS_STATE(s_callbacksType0_AcquireForeground);
+	CAFE_PROCESS_STATE(s_callbacksType1_ReleaseForeground);
+	CAFE_PROCESS_STATE(s_callbacksType2_Exit);
+	CAFE_PROCESS_STATE(s_callbacksType3_NetIoStart);
+	CAFE_PROCESS_STATE(s_callbacksType4_NetIoStop);
+	CAFE_PROCESS_STATE(s_callbacksType5_HomeButtonDenied);
+	CAFE_PROCESS_STATE(s_backgroundCallbackList);
+	CAFE_PROCESS_STATE(s_driverIsActive);
+	CAFE_PROCESS_STATE(s_driverArgUkn1);
+	CAFE_PROCESS_STATE(s_driverArgUkn2);
+	CAFE_PROCESS_STATE(s_driverInBackground);
+	CAFE_PROCESS_STATE(g_lastMsg);
+}

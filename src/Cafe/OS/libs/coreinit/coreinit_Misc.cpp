@@ -1,5 +1,7 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/sysapp/sysapp.h"
+#include "Cafe/CafeProcess.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -723,6 +725,20 @@ namespace coreinit
 
 	void OSLauncherThread(uint64 titleId)
 	{
+		if (CafeProcess::HasSuspendedTitle())
+		{
+			if (titleId == CafeProcess::GetSuspendedTitleId())
+			{
+				// back to the suspended title (e.g. the HOME Menu closed): it continues where it was
+				CafeSystem::ShutdownTitle();
+				CafeSystem::RequestRecreateCanvas();
+				if (CafeProcess::ResumeSuspendedTitle())
+					return;
+				cemuLog_log(LogType::Force, "Process: resume failed, starting {:016x} again", titleId);
+			}
+			else if (TitleIdParser(titleId).GetType() != TitleIdParser::TITLE_TYPE::SYSTEM_OVERLAY_TITLE)
+				CafeProcess::DiscardSuspendedTitle(); // another main app replaces it
+		}
 		CafeSystem::ShutdownTitle();
 		CafeSystem::PrepareForegroundTitle(titleId);
 		CafeSystem::RequestRecreateCanvas();
@@ -1033,6 +1049,22 @@ namespace coreinit
 					g_renderer->CancelScreenshotRequest();
 					cemuLog_log(LogType::Force, "HOME button: last frame capture timed out, the HOME Menu background will be black");
 				}
+				if (CafeProcess::IsSuspendEnabled())
+				{
+					// keep the Wii U Menu alive, frozen, while the HOME Menu runs (resumed when the HOME Menu returns to it)
+					uint64 homeMenuTitleId = sysapp::ResolvePFIDToTitleId(SYS_PFID_HOME_MENU);
+					if (homeMenuTitleId == 0)
+					{
+						cemuLog_log(LogType::Force, "HOME button: the HOME Menu (00050030-1001x10A) is not installed");
+						return;
+					}
+					cemuLog_log(LogType::Force, "HOME button: suspending {:016x} and opening the HOME Menu", CafeSystem::GetForegroundTitleId());
+					_BeginTitleSwitch(homeMenuTitleId);
+					std::thread([homeMenuTitleId]() {
+						CafeProcess::SuspendForegroundTitleAndLaunch(homeMenuTitleId);
+					}).detach();
+					return;
+				}
 				if (sysapp::SwitchToPFID(SYS_PFID_HOME_MENU, "HOME button") != 0)
 					cemuLog_log(LogType::Force, "HOME button: the HOME Menu (00050030-1001x10A) is not installed");
 				return; // on success the switch suspends this thread
@@ -1338,3 +1370,21 @@ namespace coreinit
 	}
 
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(s_currentTitleId);
+	CAFE_PROCESS_STATE(s_sdkVersion);
+	CAFE_PROCESS_STATE(g_homeButtonMenuEnabled);
+	CAFE_PROCESS_STATE(s_transitionToBackground);
+	CAFE_PROCESS_STATE(s_transitionToForeground);
+	CAFE_PROCESS_STATE(s_exitRequested);
+	CAFE_PROCESS_STATE(s_releaseForShutdownPending);
+	CAFE_PROCESS_STATE(s_exitMessagePending);
+	CAFE_PROCESS_STATE(s_homeButtonDown);
+	CAFE_PROCESS_STATE(s_homeCloseInProgress);
+	CAFE_PROCESS_STATE(s_homeMenuLaunchPending);
+	CAFE_PROCESS_STATE(s_homeMenuLaunchWaitReads);
+	CAFE_PROCESS_STATE(s_homeMenuState);
+}

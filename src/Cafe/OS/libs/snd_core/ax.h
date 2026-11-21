@@ -389,6 +389,7 @@ namespace snd_core
 	sint32 AXIsMultiVoiceRunning(AXVPBMULTI* mv);
 	
 	void AXOut_init();
+	bool AXIsInit();
 	void AXOut_reset();
 	void AXOut_update();
 

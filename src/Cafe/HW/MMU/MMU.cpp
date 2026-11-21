@@ -170,13 +170,21 @@ struct MMUProcessMemory
 	std::vector<Entry> entries;
 };
 
-MMUProcessMemory* memory_detachProcessMemory()
+MMUProcessMemory* memory_detachProcessMemory(bool unmapTitleRanges)
 {
 	auto* processMemory = new MMUProcessMemory();
 	for (auto& range : g_mmuRanges)
 	{
 		if (!range->isMapped() || !range->isSharedMemoryBacked())
 			continue;
+		if (unmapTitleRanges && !range->isMappedEarly())
+		{
+			processMemory->entries.push_back({ range, range->size, range->m_sharedMemory });
+			MemMapper::UnmapSharedMemory(memory_base + range->baseAddress, range->size);
+			range->m_sharedMemory = -1;
+			range->m_isMapped = false;
+			continue;
+		}
 		MemMapper::SharedMemoryHandle fresh = MemMapper::CreateSharedMemory(range->size, range->name.c_str());
 		if (fresh < 0 || !MemMapper::MapSharedMemory(fresh, memory_base + range->baseAddress, range->size, MemMapper::PAGE_PERMISSION::P_RW))
 		{
@@ -192,6 +200,15 @@ MMUProcessMemory* memory_detachProcessMemory()
 	return processMemory;
 }
 
+void memory_discardProcessMemory(MMUProcessMemory* processMemory)
+{
+	if (!processMemory)
+		return;
+	for (auto& entry : processMemory->entries)
+		MemMapper::CloseSharedMemory(entry.handle);
+	delete processMemory;
+}
+
 void memory_attachProcessMemory(MMUProcessMemory* processMemory)
 {
 	if (!processMemory)
@@ -199,7 +216,35 @@ void memory_attachProcessMemory(MMUProcessMemory* processMemory)
 	for (auto& entry : processMemory->entries)
 	{
 		MMURange* range = entry.range;
-		cemu_assert_debug(range->size == entry.size);
+		if (!range->isMapped())
+		{
+			// unmapped since the swap (the title ranges of another process were unmapped): map it again
+			range->size = entry.size;
+			if (!MemMapper::MapSharedMemory(entry.handle, memory_base + range->baseAddress, entry.size, MemMapper::PAGE_PERMISSION::P_RW))
+			{
+				cemuLog_log(LogType::Force, "MMU: unable to map {} back in", range->name);
+				MemMapper::CloseSharedMemory(entry.handle);
+				continue;
+			}
+			range->m_sharedMemory = entry.handle;
+			range->m_isMapped = true;
+			continue;
+		}
+		if (range->size != entry.size || !range->isSharedMemoryBacked())
+		{
+			// remapped with a different size or as plain memory by another process: replace that mapping completely
+			range->unmapMem();
+			range->size = entry.size;
+			if (!MemMapper::MapSharedMemory(entry.handle, memory_base + range->baseAddress, entry.size, MemMapper::PAGE_PERMISSION::P_RW))
+			{
+				cemuLog_log(LogType::Force, "MMU: unable to map {} back in", range->name);
+				MemMapper::CloseSharedMemory(entry.handle);
+				continue;
+			}
+			range->m_sharedMemory = entry.handle;
+			range->m_isMapped = true;
+			continue;
+		}
 		if (!MemMapper::MapSharedMemory(entry.handle, memory_base + range->baseAddress, entry.size, MemMapper::PAGE_PERMISSION::P_RW))
 		{
 			cemuLog_log(LogType::Force, "MMU: unable to swap {} back in", range->name);

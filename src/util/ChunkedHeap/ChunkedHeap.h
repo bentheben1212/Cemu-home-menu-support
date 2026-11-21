@@ -592,6 +592,17 @@ private:
 		}
 	}
 
+public:
+	// exchanges the allocation state with another heap of the same size (used to set a suspended process's heap aside)
+	void swapState(VHeap& other)
+	{
+		cemu_assert(m_heapSize == other.m_heapSize);
+		std::swap(bucketFreeRange, other.bucketFreeRange);
+		map_allocatedRange.swap(other.map_allocatedRange);
+		std::swap(m_heapBase, other.m_heapBase);
+		std::swap(m_statsMemAllocated, other.m_statsMemAllocated);
+	}
+
 private:
 	allocRange_t* bucketFreeRange[32]{};
 	std::unordered_map<uint32, allocRange_t*> map_allocatedRange;

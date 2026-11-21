@@ -1,4 +1,5 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/snd_core/ax_internal.h"
 #include "audio/IAudioAPI.h"
 #include "config/CemuConfig.h"
@@ -530,4 +531,16 @@ namespace snd_core
 		}
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace snd_core
+{
+	CAFE_PROCESS_STATE(numProcessedFrames);
+	CAFE_PROCESS_STATE(__AXMode);
+	CAFE_PROCESS_STATE(__AXOutTVOutputChannelCount);
+	CAFE_PROCESS_STATE(__AXOutDRCOutputChannelCount);
+	CAFE_PROCESS_STATE(tempAudioBlockCounter);
+	CAFE_PROCESS_STATE(tempDRCAudioBlockCounter);
+	CAFE_PROCESS_STATE(numQueuedFramesSndGeneric);
 }

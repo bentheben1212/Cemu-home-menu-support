@@ -23,6 +23,12 @@ public:
 	bool IsAllocated() const { return m_allocation != nullptr; }
 
 	static bool HasAnyAllocations();
+
+	// suspending a process: detach all allocated COS (title) static data blocks, so the next process allocates its own
+	// (in its own memory), and attach them again on resume. IOSU blocks are shared and stay
+	static void* SaveCOSState();
+	static void RestoreCOSState(void* saved);
+	static void DiscardCOSState(void* saved);
 private:
 	friend class CafeStaticVarBase;
 	std::vector<CafeStaticVarBase*>* m_vars{}; // pointer to make this class constinit compatible

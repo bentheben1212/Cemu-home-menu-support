@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit_SysHeap.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MEM_ExpHeap.h"
 
@@ -39,4 +40,13 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSFreeToSystem, LogType::CoreinitMem);
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(_sysHeapHandle);
+	CAFE_PROCESS_STATE(_sysHeapAllocCounter);
+	CAFE_PROCESS_STATE(_sysHeapFreeCounter);
+	CAFE_PROCESS_STATE(heapBaseAddress);
 }

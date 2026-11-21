@@ -37,6 +37,8 @@ void Latte_LoadInitialRegisters()
 
 extern bool gx2WriteGatherInited;
 
+std::vector<uint32> g_latteResumeContextRegisters; // set by CafeProcess when resuming a suspended title
+
 LatteTextureView* osScreenTVTex[2] = { nullptr };
 LatteTextureView* osScreenDRCTex[2] = { nullptr };
 
@@ -196,6 +198,13 @@ int Latte_ThreadEntry()
     LatteShaderCache_Load();
 	// init registers
 	Latte_LoadInitialRegisters();
+	// a resumed title continues with its own register values (see CafeProcess)
+	if (!g_latteResumeContextRegisters.empty())
+	{
+		cemu_assert(g_latteResumeContextRegisters.size() == LATTE_MAX_REGISTER);
+		memcpy(LatteGPUState.contextRegister, g_latteResumeContextRegisters.data(), LATTE_MAX_REGISTER * sizeof(uint32));
+		g_latteResumeContextRegisters.clear();
+	}
 	// let CPU thread know the GPU is done initializing
 	g_isGPUInitFinished = true;
 	// wait until CPU has called GX2Init()

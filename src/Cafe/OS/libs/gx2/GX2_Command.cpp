@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
@@ -540,4 +541,12 @@ namespace GX2
 		s_cbBufferIsInternallyAllocated = false;
     }
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace GX2
+{
+	CAFE_PROCESS_STATE(s_perCoreCBState);
+	CAFE_PROCESS_STATE(s_mainCoreLastCommandState);
+	CAFE_PROCESS_STATE(s_cbBufferIsInternallyAllocated);
 }

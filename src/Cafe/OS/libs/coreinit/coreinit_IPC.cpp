@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/IOSU/kernel/iosu_kernel.h"
 #include "Cafe/HW/Espresso/Const.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
@@ -575,3 +576,12 @@ namespace coreinit
 	}
 
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(s_openIOSHandles);
+	CAFE_PROCESS_STATE(s_pendingOpenClose);
+	CAFE_PROCESS_STATE(s_activeReplyDeliveries);
+	CAFE_PROCESS_STATE(s_ipcShutdown);
+}

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/libs/snd_core/ax.h"
@@ -1227,4 +1228,37 @@ namespace snd_core
 		vpbLoopTracker_prevCurrentOffset[voiceIndex] = currentOffset;
 		return vpbLoopTracker_loopCount[voiceIndex];
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace snd_core
+{
+	CAFE_PROCESS_STATE(__AXFreeVoices);
+	CAFE_PROCESS_STATE(__AXVPBInternalVoiceArray);
+	CAFE_PROCESS_STATE(__AXVPBInternalVoiceShadowCopyArrayPtr);
+	CAFE_PROCESS_STATE(__AXVPBItdArrayPtr);
+	CAFE_PROCESS_STATE(__AXVPBArrayPtr);
+	CAFE_PROCESS_STATE(__AXUserProtectionArraySize);
+	CAFE_PROCESS_STATE(__AXUserProtectionArray);
+	CAFE_PROCESS_STATE(__AXVoiceProtection);
+	CAFE_PROCESS_STATE(vpbLoopTracker_loopCount);
+	CAFE_PROCESS_STATE(vpbLoopTracker_prevCurrentOffset);
+}
+namespace snd_core
+{
+	// array of vectors: not handled by CAFE_PROCESS_STATE
+	static CafeProcess::StateCallbacks s_voicesPerPriorityState("__AXVoicesPerPriority", CafeProcess::StatePhase::General,
+		[]() -> void* {
+			auto* saved = new std::array<std::vector<AXVPB*>, AX_PRIORITY_MAX>();
+			for (size_t i = 0; i < AX_PRIORITY_MAX; i++)
+				(*saved)[i] = std::move(__AXVoicesPerPriority[i]), __AXVoicesPerPriority[i].clear();
+			return saved;
+		},
+		[](void* p) {
+			auto* saved = (std::array<std::vector<AXVPB*>, AX_PRIORITY_MAX>*)p;
+			for (size_t i = 0; i < AX_PRIORITY_MAX; i++)
+				__AXVoicesPerPriority[i] = std::move((*saved)[i]);
+			delete saved;
+		},
+		[](void* p) { delete (std::array<std::vector<AXVPB*>, AX_PRIORITY_MAX>*)p; });
 }

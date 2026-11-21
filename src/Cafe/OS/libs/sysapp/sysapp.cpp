@@ -725,6 +725,11 @@ namespace sysapp
 	static constexpr sint32 SYS_PFID_ESHOP = 10;
 
 	// used by other libraries that start an applet themselves (e.g. nn_olv StartPortalApp for Miiverse)
+	uint64 ResolvePFIDToTitleId(sint32 pfid)
+	{
+		return _SYSResolvePFIDToTitleId(pfid);
+	}
+
 	uint32 SwitchToPFID(sint32 pfid, const char* funcName)
 	{
 		coreinit::__OSClearCopyData();

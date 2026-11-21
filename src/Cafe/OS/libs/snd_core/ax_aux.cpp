@@ -1,4 +1,5 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/snd_core/ax_internal.h"
 #include "Cafe/HW/Espresso/PPCState.h"
 #include "Common/CafeStaticVar.h"
@@ -295,4 +296,18 @@ namespace snd_core
 		return 0;
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace snd_core
+{
+	CAFE_PROCESS_STATE(__AXOldAuxDRCCallbackFunc);
+	CAFE_PROCESS_STATE(__AXOldAuxDRCCallbackUserParam);
+	CAFE_PROCESS_STATE(__AXOldAuxTVCallbackFunc);
+	CAFE_PROCESS_STATE(__AXOldAuxTVCallbackUserParam);
+	CAFE_PROCESS_STATE(__AXAuxDRCCallbackFunc);
+	CAFE_PROCESS_STATE(__AXAuxDRCCallbackUserParam);
+	CAFE_PROCESS_STATE(__AXAuxTVCallbackFunc);
+	CAFE_PROCESS_STATE(__AXAuxTVCallbackUserParam);
+	CAFE_PROCESS_STATE(__AXCurrentAuxInputFrameIndex);
 }

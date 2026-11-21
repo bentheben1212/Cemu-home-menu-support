@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "GX2.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
@@ -445,3 +446,9 @@ namespace GX2
 		sGX2MainCoreIndex = 0;
 	}
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace GX2
+{
+	CAFE_PROCESS_STATE(sGX2MainCoreIndex);
+}

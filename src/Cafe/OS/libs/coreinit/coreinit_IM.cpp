@@ -1,4 +1,5 @@
 #include "Cafe/CafeSystem.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 
 // APD = Automatic Power Down
@@ -139,3 +140,9 @@ namespace coreinit
 	}
 
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(imDimIsEnabled);
+}

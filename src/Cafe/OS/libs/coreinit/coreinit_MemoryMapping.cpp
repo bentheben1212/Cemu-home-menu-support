@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "util/MemMapper/MemMapper.h"
 
 #define OS_MAP_READ_ONLY		(1)
@@ -160,4 +161,10 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSMapMemory, LogType::CoreinitMemoryMapping);
 		cafeExportRegister("coreinit", OSUnmapMemory, LogType::CoreinitMemoryMapping);
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(s_allocatedVirtMemory);
 }

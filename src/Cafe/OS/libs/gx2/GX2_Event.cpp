@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "GX2_Command.h"
 #include "GX2_Event.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
@@ -277,4 +278,11 @@ namespace GX2
             it.userData = nullptr;
         }
     }
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace GX2
+{
+	CAFE_PROCESS_STATE(s_eventCallback);
+	CAFE_PROCESS_STATE(s_callbackThreadLaunched);
 }

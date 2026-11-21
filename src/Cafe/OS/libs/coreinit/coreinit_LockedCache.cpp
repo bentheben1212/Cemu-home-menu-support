@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 
@@ -299,4 +300,18 @@ namespace coreinit
 
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(lcCacheMask);
+	CAFE_PROCESS_STATE(lcAllocatedBlocks);
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(LCIsEnabled);
+	CAFE_PROCESS_STATE(_lcDisableErrorCounter);
 }

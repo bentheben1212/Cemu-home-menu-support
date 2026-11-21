@@ -1,4 +1,5 @@
 #include <OS/RPL/rpl.h>
+#include "Cafe/CafeProcessState.h"
 #include <boost/algorithm/string.hpp>
 #include "config/ActiveSettings.h"
 #include "Cafe/OS/libs/coreinit/coreinit_SystemInfo.h"
@@ -2893,3 +2894,17 @@ namespace coreinit
 		g_fsRegisteredClientBodies = nullptr;
 	}
 } // namespace coreinit
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(sFSInitialized);
+	CAFE_PROCESS_STATE(sFSShutdown);
+	CAFE_PROCESS_STATE(_sdCard01Mounted);
+	CAFE_PROCESS_STATE(_mlc01Mounted);
+	CAFE_PROCESS_STATE(s_sdCardMountPath);
+	CAFE_PROCESS_STATE(s_mlcMountPath);
+	CAFE_PROCESS_STATE(g_fsRegisteredClientBodies);
+	CAFE_PROCESS_STATE(s_fsa_activeClients);
+	CAFE_PROCESS_STATE(s_fsaInitDone);
+}

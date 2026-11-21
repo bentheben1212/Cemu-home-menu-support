@@ -1,4 +1,5 @@
 #include <zlib.h>
+#include "Cafe/CafeProcessState.h"
 
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/Filesystem/fsc.h"
@@ -2666,3 +2667,32 @@ void RPLLoader_UnloadAll()
 	rplLoader_sdata2Addr = MPTR_NULL;
 	rplLoader_mainModule = nullptr;
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(g_heapTrampolineArea);
+CAFE_PROCESS_STATE(s_rplDependencyList);
+CAFE_PROCESS_STATE(s_rplModuleList);
+CAFE_PROCESS_STATE(rplLoader_applicationHasMemoryControl);
+CAFE_PROCESS_STATE(rplLoader_maxCodeAddress);
+CAFE_PROCESS_STATE(rplLoader_currentTLSModuleIndex);
+CAFE_PROCESS_STATE(rplLoader_currentHandleCounter);
+CAFE_PROCESS_STATE(rplLoader_currentTlsModuleIndex);
+CAFE_PROCESS_STATE(rplLoader_mainModule);
+CAFE_PROCESS_STATE(rplLoader_sdataAddr);
+CAFE_PROCESS_STATE(rplLoader_sdata2Addr);
+CAFE_PROCESS_STATE(rplLoader_currentDataAllocatorAddr);
+CAFE_PROCESS_STATE(g_map_callableExports);
+CAFE_PROCESS_STATE(list_mappedFunctionImports);
+
+// the loader heaps hold raw allocation lists: exchange their state with a fresh heap instead of copying
+template<typename THeap>
+static CafeProcess::StateCallbacks _RPLHeapState(const char* name, THeap& heap, uint32 size)
+{
+	return CafeProcess::StateCallbacks(name, CafeProcess::StatePhase::General,
+		[&heap, size]() -> void* { THeap* saved = new THeap(nullptr, size); saved->swapState(heap); return saved; },
+		[&heap](void* p) { THeap* saved = (THeap*)p; heap.swapState(*saved); delete saved; },
+		[](void* p) { delete (THeap*)p; });
+}
+static CafeProcess::StateCallbacks s_rplHeapWorkareaState = _RPLHeapState("rplLoaderHeap_workarea", rplLoaderHeap_workarea, MEMORY_RPLLOADER_AREA_SIZE);
+static CafeProcess::StateCallbacks s_rplHeapLowerCodeState = _RPLHeapState("rplLoaderHeap_lowerAreaCodeMem2", rplLoaderHeap_lowerAreaCodeMem2, MEMORY_CODE_TRAMPOLINE_AREA_SIZE);
+static CafeProcess::StateCallbacks s_rplHeapCodeAreaState = _RPLHeapState("rplLoaderHeap_codeArea2", rplLoaderHeap_codeArea2, MEMORY_CODEAREA_SIZE);

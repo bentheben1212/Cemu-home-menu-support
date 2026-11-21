@@ -1,4 +1,5 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/snd_core/ax_internal.h"
 #include "Cafe/HW/MMU/MMU.h"
 #include "Common/CafeStaticVar.h"
@@ -165,4 +166,10 @@ namespace snd_core
 		return result;
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace snd_core
+{
+	CAFE_PROCESS_STATE(__AXVPBMultiVoiceArray);
 }

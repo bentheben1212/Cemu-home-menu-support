@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "coreinit_OverlayArena.h"
 
@@ -31,4 +32,10 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSEnableOverlayArena, LogType::Placeholder);
 		g_coreinitOverlayArena.isEnabled = false;
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(g_coreinitOverlayArena);
 }

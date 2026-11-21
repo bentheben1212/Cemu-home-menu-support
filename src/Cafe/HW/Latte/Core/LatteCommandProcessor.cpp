@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/gx2/GX2.h" // for write gatherer and special state. Get rid of dependency
 #include "Cafe/OS/libs/gx2/GX2_Event.h" // for notification callbacks
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -2027,3 +2028,6 @@ void LatteCP_DebugPrintCmdBuffer(uint32be* bufferPtr, uint32 size)
 	}
 }
 #endif
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(_tempIndexArrayMPTR);

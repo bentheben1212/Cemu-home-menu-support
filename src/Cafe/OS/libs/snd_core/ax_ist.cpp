@@ -1,4 +1,5 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/snd_core/ax_internal.h"
 #include "Cafe/HW/Espresso/PPCState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
@@ -1070,4 +1071,19 @@ namespace snd_core
 	{
 		return __AXIstIsProcessingFrame.load();
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace snd_core
+{
+	CAFE_PROCESS_STATE(__AXDeviceUpsampleStage);
+	CAFE_PROCESS_STATE(__AXTVUpsampler);
+	CAFE_PROCESS_STATE(__AXDRCUpsampler);
+	CAFE_PROCESS_STATE(__AXFinalMixOutputChannelCount);
+	CAFE_PROCESS_STATE(__AXFrameCallback);
+	CAFE_PROCESS_STATE(__AXAppFrameCallback);
+	CAFE_PROCESS_STATE(__AXDeviceFinalMixCallback);
+	CAFE_PROCESS_STATE(__AXTVUpsamplerSampleHistory);
+	CAFE_PROCESS_STATE(__AXDRC0UpsamplerSampleHistory);
+	CAFE_PROCESS_STATE(__AXDRC1UpsamplerSampleHistory);
 }

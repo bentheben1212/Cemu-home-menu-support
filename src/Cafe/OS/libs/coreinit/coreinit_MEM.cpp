@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit_FG.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MEM.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MEM_ExpHeap.h"
@@ -661,4 +662,22 @@ namespace coreinit
 		cafeExportRegister("coreinit", MEMGetPrevListObject, LogType::CoreinitMem);
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(s_cosSysHeap);
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(g_heapTableCount);
+	CAFE_PROCESS_STATE(g_heapTable);
+	CAFE_PROCESS_STATE(g_slockInitialized);
+	CAFE_PROCESS_STATE(g_listsInitialized);
+	CAFE_PROCESS_STATE(g_list1);
+	CAFE_PROCESS_STATE(g_list2);
+	CAFE_PROCESS_STATE(g_list3);
+	CAFE_PROCESS_STATE(gHeapFillValues);
+	CAFE_PROCESS_STATE(gDefaultHeap);
+	CAFE_PROCESS_STATE(sHeapBaseHandle);
 }

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "WindowSystem.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
@@ -1190,6 +1191,45 @@ namespace CafeSystem
 		s_foregroundTitleCompatibility = TitleCompatibility::Default;
 	}
 
+	void DetachSuspendedTitle()
+	{
+		std::unique_lock _lock(sShutdownTitleMtx);
+		// IOSU services are started per title; the next title starts them again (resume restarts them for this one)
+		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
+			(*it)->TitleStop();
+		UnmountCurrentTitle();
+		UnmountExtras();
+		MlcStorageUnmountAllTitles();
+		UnmountBaseDirectories();
+		LaunchSettings::ClearCosArgstr();
+		PPCInterpreter_resetUnsupportedHLECallTracking();
+		sSystemRunning = false;
+	}
+
+	PREPARE_STATUS_CODE ReattachSuspendedTitle(TitleId titleId)
+	{
+		MountBaseDirectories();
+		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
+		if (r != PREPARE_STATUS_CODE::SUCCESS)
+			return r;
+		gameProfile_load();
+		PPCRecompiler_init();
+		InitVirtualMlcStorage();
+		MountExtras();
+		for(auto& module : s_iosuModules)
+			module->TitleStart();
+		return PREPARE_STATUS_CODE::SUCCESS;
+	}
+
+	void StartSchedulerForResume()
+	{
+		sSystemRunning = true;
+		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(3);
+		else
+			coreinit::OSSchedulerBegin(1);
+	}
+
 	/* Virtual mlc storage */
 
 	void InitVirtualMlcStorage()
@@ -1355,4 +1395,18 @@ namespace CafeSystem
 			fsc_close(dirIterator);
 		}
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(_pathToExecutable);
+CAFE_PROCESS_STATE(_pathToBaseExecutable);
+CAFE_PROCESS_STATE(currentBaseApplicationHash);
+CAFE_PROCESS_STATE(currentUpdatedApplicationHash);
+CAFE_PROCESS_STATE(isLaunchTypeELF);
+CAFE_PROCESS_STATE(_entryPoint);
+namespace CafeSystem
+{
+	CAFE_PROCESS_STATE(sLaunchModeIsStandalone);
+	CAFE_PROCESS_STATE(s_foregroundReturnStatus);
+	CAFE_PROCESS_STATE(s_foregroundTitleCompatibility);
 }

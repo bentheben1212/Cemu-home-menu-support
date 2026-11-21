@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "GX2.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -389,3 +390,6 @@ void gx2Export_GX2GetContextStateDisplayList(PPCInterpreter_t* hCPU)
 
 	osLib_returnFromFunction(hCPU, 0);
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(gx2CurrentContextStateMPTR);

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/libs/coreinit/coreinit.h"
 #include "Cafe/OS/RPL/rpl.h"
@@ -224,3 +225,8 @@ void coreinit_start(PPCInterpreter_t* hCPU)
 	hCPU->gpr[3] = _coreinitInfo->argc;
 	hCPU->instructionPointer = _coreinitTitleEntryPoint;
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(_coreinitInfo);
+CAFE_PROCESS_STATE(argStorageIndex);
+CAFE_PROCESS_STATE(_coreinitTitleEntryPoint);

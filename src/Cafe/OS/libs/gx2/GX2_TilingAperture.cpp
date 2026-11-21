@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "GX2.h"
 #include "GX2_Resource.h"
 #include "GX2_Surface.h"
@@ -499,4 +500,11 @@ namespace GX2
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace GX2
+{
+	CAFE_PROCESS_STATE(s_tilingApertures);
+	CAFE_PROCESS_STATE(s_apertureUseMask);
 }

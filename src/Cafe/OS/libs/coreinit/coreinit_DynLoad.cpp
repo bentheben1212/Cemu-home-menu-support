@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/OS/RPL/rpl_structs.h"
@@ -297,4 +298,14 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSDynLoad_AddNotifyCallback, LogType::Placeholder);
 		cafeExportRegister("coreinit", OSDynLoad_DelNotifyCallback, LogType::Placeholder);
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(_osDynLoadFuncAlloc);
+	CAFE_PROCESS_STATE(_osDynLoadFuncFree);
+	CAFE_PROCESS_STATE(_osDynLoadTLSFuncAlloc);
+	CAFE_PROCESS_STATE(_osDynLoadTLSFuncFree);
+	CAFE_PROCESS_STATE(notifyCallbacks);
 }

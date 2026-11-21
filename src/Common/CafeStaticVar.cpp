@@ -111,6 +111,56 @@ void CafeStaticData::Deallocate()
 	s_iosuStaticDataBlocks.erase(this);
 }
 
+struct SavedCOSStaticBlock
+{
+	CafeStaticData* block;
+	void* allocation;
+	std::vector<std::pair<CafeStaticVarBase*, MEMPTR<void>>> varMemory;
+};
+
+void* CafeStaticData::SaveCOSState()
+{
+	std::unique_lock _l(s_cafeStaticDataMutex);
+	auto* saved = new std::vector<SavedCOSStaticBlock>();
+	std::vector<CafeStaticData*> blocks(s_iosuStaticDataBlocks.begin(), s_iosuStaticDataBlocks.end());
+	for (CafeStaticData* block : blocks)
+	{
+		if (block->m_mode != Mode::COS || !block->m_allocation)
+			continue;
+		SavedCOSStaticBlock entry{block, block->m_allocation, {}};
+		for (auto& var : *block->m_vars)
+		{
+			entry.varMemory.emplace_back(var, var->m_memory);
+			var->m_memory = nullptr;
+		}
+		block->m_allocation = nullptr;
+		s_iosuStaticDataBlocks.erase(block);
+		saved->emplace_back(std::move(entry));
+	}
+	return saved;
+}
+
+void CafeStaticData::RestoreCOSState(void* p)
+{
+	std::unique_lock _l(s_cafeStaticDataMutex);
+	auto* saved = (std::vector<SavedCOSStaticBlock>*)p;
+	for (auto& entry : *saved)
+	{
+		CafeStaticData* block = entry.block;
+		cemu_assert_debug(!block->m_allocation); // the other process must have released it
+		block->m_allocation = entry.allocation;
+		for (auto& [var, memory] : entry.varMemory)
+			var->m_memory = memory;
+		s_iosuStaticDataBlocks.emplace(block);
+	}
+	delete saved;
+}
+
+void CafeStaticData::DiscardCOSState(void* p)
+{
+	delete (std::vector<SavedCOSStaticBlock>*)p;
+}
+
 CafeStaticData::~CafeStaticData()
 {
 	std::unique_lock _l(s_cafeStaticDataMutex);

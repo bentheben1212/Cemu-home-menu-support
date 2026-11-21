@@ -129,10 +129,14 @@ struct MMURange
 // when the platform supports it and CEMU_PROCESS_MEMORY=shared is set (opt-in while this is being developed)
 bool memory_isProcessMemorySwappable();
 struct MMUProcessMemory; // the memory objects of one process, while it is swapped out
-// swaps the current process memory out: maps fresh zeroed memory in its place and returns the detached memory
-MMUProcessMemory* memory_detachProcessMemory();
-// maps previously detached process memory back in place, discarding the memory that is mapped now
+// swaps the current process memory out and returns it. With unmapTitleRanges the title ranges are left unmapped (the next
+// title maps its own memory as usual), otherwise zeroed memory is mapped in their place. Ranges mapped at Cemu start
+// (Cemu's HLE data area) always get zeroed memory
+MMUProcessMemory* memory_detachProcessMemory(bool unmapTitleRanges = false);
+// maps previously detached process memory back in place, discarding whatever is mapped there now
 void memory_attachProcessMemory(MMUProcessMemory* processMemory);
+// frees detached process memory without attaching it (the suspended process is discarded)
+void memory_discardProcessMemory(MMUProcessMemory* processMemory);
 
 
 extern MMURange mmuRange_LOW0;

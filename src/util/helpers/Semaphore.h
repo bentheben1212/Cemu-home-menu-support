@@ -117,6 +117,20 @@ public:
 		return m_count == 0;
 	}
 
+	// used to save/restore the run queue counters of a suspended process
+	sint64 getCount()
+	{
+		std::lock_guard lock(m_mutex);
+		return m_count;
+	}
+
+	void setCount(sint64 count)
+	{
+		std::lock_guard lock(m_mutex);
+		m_count = count;
+		m_condition.notify_all();
+	}
+
 private:
 	std::mutex m_mutex;
 	std::condition_variable m_condition;

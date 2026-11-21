@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include <memory>
 
 #define FG_BUCKET_AREA_FREE					0	// free area available game
@@ -188,4 +189,11 @@ namespace coreinit
 		cafeExportRegister("coreinit", OSGetForegroundBucketFreeArea, LogType::CoreinitMem);
 		osLib_addFunction("coreinit", "OSCopyFromClipboard", coreinitExport_OSCopyFromClipboard);
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(fgAddr);
+	CAFE_PROCESS_STATE(fgSaveAreaAddr);
 }

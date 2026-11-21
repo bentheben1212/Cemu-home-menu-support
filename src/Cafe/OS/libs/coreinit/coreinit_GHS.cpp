@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/coreinit/coreinit_GHS.h"
 #include "Cafe/OS/libs/coreinit/coreinit_MEM.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
@@ -304,3 +305,9 @@ namespace coreinit
 		cafeExportRegister("coreinit", __tls_get_addr, LogType::Placeholder);
 	}
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(_flockMutexMask);
+}

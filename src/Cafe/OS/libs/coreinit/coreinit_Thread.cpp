@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
@@ -1902,4 +1903,36 @@ namespace coreinit
 		__OSInitDefaultThreads();
 		__OSInitTerminatorThreads();
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE_THREADS(s_activeThreads);
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE_THREADS(s_threadToFiber);
+	CAFE_PROCESS_STATE_THREADS(__currentCoreThread);
+	CAFE_PROCESS_STATE(s_blockThreadsOnExit);
+}
+namespace coreinit
+{
+	// run queue counters must match the run queues in the suspended process's memory
+	static CafeProcess::StateCallbacks s_runQueueCountState("g_coreRunQueueThreadCount", CafeProcess::StatePhase::Threads,
+		[]() -> void* {
+			auto* counts = new std::array<sint64, 3>();
+			for (sint32 i = 0; i < 3; i++)
+			{
+				(*counts)[i] = g_coreRunQueueThreadCount[i].getCount();
+				g_coreRunQueueThreadCount[i].setCount(0);
+			}
+			return counts;
+		},
+		[](void* saved) {
+			auto* counts = (std::array<sint64, 3>*)saved;
+			for (sint32 i = 0; i < 3; i++)
+				g_coreRunQueueThreadCount[i].setCount((*counts)[i]);
+			delete counts;
+		},
+		[](void* saved) { delete (std::array<sint64, 3>*)saved; });
 }

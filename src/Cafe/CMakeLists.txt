@@ -4,6 +4,7 @@ add_library(CemuCafe
   Account/Account.h
   CafeProcess.cpp
   CafeProcess.h
+  CafeProcessState.h
   CafeSystem.cpp
   CafeSystem.h
   Filesystem/fsc.cpp

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
@@ -143,6 +144,7 @@ namespace coreinit
 		void (*m_callbackFunc)(uint64 currentTick, void* context);
 		void* m_context;
 
+	public: // registered as per-process state
 		static std::set<class OSHostAlarm*, ComparatorFireTime> g_activeAlarmList;
 		static std::atomic_uint64_t g_soonestAlarm;
 	};
@@ -533,4 +535,12 @@ namespace coreinit
 		strcpy(_g_alarmThreadName.GetPtr(), "Alarm Thread");
 		coreinit::OSSetThreadName(g_alarmThread.GetPtr(), _g_alarmThreadName.GetPtr());
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace coreinit
+{
+	CAFE_PROCESS_STATE(OSHostAlarm::g_activeAlarmList);
+	CAFE_PROCESS_STATE(OSHostAlarm::g_soonestAlarm);
+	CAFE_PROCESS_STATE(g_activeAlarms);
 }

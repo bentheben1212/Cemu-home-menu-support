@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "GX2.h"
@@ -258,3 +259,10 @@ namespace GX2
 		GX2RFreeFunc = MPTR_NULL;
 	}
 };
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace GX2
+{
+	CAFE_PROCESS_STATE(GX2RAllocateFunc);
+	CAFE_PROCESS_STATE(GX2RFreeFunc);
+}

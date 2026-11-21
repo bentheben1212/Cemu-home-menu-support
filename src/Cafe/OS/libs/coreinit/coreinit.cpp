@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Common/SysAllocator.h"
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
 
@@ -449,3 +450,8 @@ namespace coreinit
 		return &s_COSCoreinitModule;
 	}
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(gCoreinitData);
+CAFE_PROCESS_STATE(placeholderFont);
+CAFE_PROCESS_STATE(placeholderFontSize);

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "GX2.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -416,3 +417,6 @@ namespace GX2
 		return &s_COSGX2Module;
 	}
 }
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+CAFE_PROCESS_STATE(lastSwapTime);

@@ -65,6 +65,12 @@ namespace CafeSystem
 
 	void ShutdownTitle();
 
+	// suspending a title (see CafeProcess): the title's state was set aside, unmount it and mark the system as stopped
+	// without the usual teardown. Reattach mounts it again (no executable is loaded, the title continues where it was)
+	void DetachSuspendedTitle();
+	PREPARE_STATUS_CODE ReattachSuspendedTitle(TitleId titleId);
+	void StartSchedulerForResume();
+
 	std::string GetMlcStoragePath(TitleId titleId);
 	void MlcStorageMountAllTitles();
 
