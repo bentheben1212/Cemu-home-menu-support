@@ -872,9 +872,9 @@ namespace sysapp
 	};
 	static_assert(sizeof(EManualArgs) == 0x10);
 
-	// Electronic Manual applet (PFID 3). Copy data (sys args) serialization isn't implemented, so the title whose manual
+	// Electronic Manual applet (PFID 4). Copy data (sys args) serialization isn't implemented, so the title whose manual
 	// was requested is kept here and handed to the manual through _SYSGetEManualArgs when it starts
-	static constexpr sint32 SYS_PFID_EMANUAL = 3;
+	static constexpr sint32 SYS_PFID_EMANUAL = 4; // PFID 3 is TVii
 	static uint64 s_eManualRequestedTitleId = 0;
 
 	void _SYSSwitchToEManual(EManualArgs* args)
@@ -891,9 +891,9 @@ namespace sysapp
 				requestedTitleId = currentTitleId;
 		}
 		uint64 eManualTitleId = _SYSResolvePFIDToTitleId(SYS_PFID_EMANUAL);
-		if (eManualTitleId == 0 || !nn::acp::ACPIsTitleLaunchable(eManualTitleId))
+		if (eManualTitleId == 0 || _SYSGetUPIDFromTitleId(eManualTitleId) != SYS_PFID_EMANUAL || !nn::acp::ACPIsTitleLaunchable(eManualTitleId))
 		{
-			cemuLog_log(LogType::Force, "_SYSSwitchToEManual: Electronic Manual (PFID 3) not installed, manual not opened");
+			cemuLog_log(LogType::Force, "_SYSSwitchToEManual: Electronic Manual (PFID 4) not installed (lookup gave {:016x}), manual not opened", eManualTitleId);
 			coreinit::StartBackgroundForegroundTransition();
 			return;
 		}
