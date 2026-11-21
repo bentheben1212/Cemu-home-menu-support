@@ -6,6 +6,7 @@
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 #include "config/CemuConfig.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 
 sint32 s_customVsyncFrequency = -1;
 
@@ -80,6 +81,11 @@ void LatteTiming_signalVsync()
 	static uint32 s_vsyncIntervalCounter = 0;
 
 	if (!LatteGPUState.gx2InitCalled)
+		return;
+	// a frozen title gets no flips or vsync events (like a suspended title on a console). They would also update the
+	// title's memory and wake its threads while it may be swapped out, and the host-side flip counter would no longer
+	// match the title's, which hangs it after the thaw
+	if (coreinit::OSIsSchedulerFrozen())
 		return;
 	s_vsyncIntervalCounter++;
 	uint32 swapInterval = 1;

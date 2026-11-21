@@ -110,6 +110,13 @@ GPU retire timestamps and EOP writes, GX2 shared area (vsync/flip counters, in `
 AX DMA buffers, texture readbacks. The swap test logs every range written while swapped out
 (`MMU: ... was written while swapped out`). Step 1 has to drain or redirect each writer before the swap.
 
+Found so far (swap test with Super Mario 3D World):
+- Vsync/flip handling (`LatteTiming_signalVsync`): writes `flipExecuteCount` in the GX2 shared area (CEMU_AREA) and
+  notifies GX2 flip/vsync events, while decrementing the host-side `LatteGPUState.flipRequestCount`. With the guest
+  write lost, host and title disagree and the title waits for a flip forever after the thaw (frozen picture, audio
+  still playing). Fixed: no vsync/flip handling while the title is frozen. Two pages were written
+  (0x0E38D000, 0x0E39E000); rerun the test to confirm nothing else writes.
+
 ## 5. Step 1 sequence (Wii U Menu frozen under the HOME Menu)
 
 1. HOME pressed on the Wii U Menu: capture the last frame (as now), send the menu ReleaseForeground and wait for its
