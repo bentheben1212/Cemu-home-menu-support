@@ -1358,9 +1358,35 @@ namespace coreinit
 		s_lehmer_lcg[coreIndex] = (uint32)((uint64)s_lehmer_lcg[coreIndex] * 279470273ull % 0xfffffffbull);
 	}
 
+	std::atomic<bool> s_schedulerFrozen{false};
+
+	void OSSetSchedulerFrozen(bool frozen)
+	{
+		// idle cores poll the flag while frozen, so they resume on their own after a thaw
+		s_schedulerFrozen.store(frozen);
+	}
+
+	bool OSIsSchedulerFrozen()
+	{
+		return s_schedulerFrozen.load(std::memory_order::relaxed);
+	}
+
+	uint32 OSCountRunningThreads()
+	{
+		__OSLockScheduler();
+		uint32 count = 0;
+		for (OSThread_t* thread : s_activeThreads)
+			if (thread->state == OSThread_t::THREAD_STATE::STATE_RUNNING)
+				count++;
+		__OSUnlockScheduler();
+		return count;
+	}
+
 	OSThread_t* __OSGetNextRunableThread(uint32 coreIndex)
 	{
 		cemu_assert_debug(__OSHasSchedulerLock());
+		if (s_schedulerFrozen.load(std::memory_order::relaxed))
+			return nullptr; // frozen: run no guest thread
 		// pick thread, then remove from run queue
 		OSThreadQueue* runQueue = g_coreRunQueue.GetPtr() + coreIndex;
 
@@ -1428,6 +1454,14 @@ namespace coreinit
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
 				}
 				__OSUnlockScheduler();
+			}
+			if (s_schedulerFrozen.load(std::memory_order::relaxed))
+			{
+				// frozen: no system events either (alarms fire late, audio output pauses), just wait for the thaw
+				if (!sSchedulerActive.load(std::memory_order::relaxed))
+					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				continue;
 			}
 			if (isMainCore)
 			{

@@ -2,6 +2,10 @@
 
 #include <unistd.h>
 #include <sys/mman.h>
+#include <fcntl.h>
+#if __linux__
+#include <sys/syscall.h>
+#endif
 
 namespace MemMapper
 {
@@ -73,4 +77,52 @@ namespace MemMapper
 			munmap(baseAddr, size);
 	}
 
+
+	/* shared memory (memfd on Linux) */
+
+	bool SupportsSharedMemory()
+	{
+#if __linux__
+		return true;
+#else
+		return false; // todo: shm_open based implementation for macOS/BSD
+#endif
+	}
+
+	SharedMemoryHandle CreateSharedMemory(size_t size, const char* debugName)
+	{
+#if __linux__
+		int fd = (int)syscall(SYS_memfd_create, debugName, (unsigned int)MFD_CLOEXEC);
+		if (fd < 0)
+			return INVALID_SHARED_MEMORY;
+		if (ftruncate(fd, (off_t)size) != 0)
+		{
+			close(fd);
+			return INVALID_SHARED_MEMORY;
+		}
+		return fd;
+#else
+		return INVALID_SHARED_MEMORY;
+#endif
+	}
+
+	void CloseSharedMemory(SharedMemoryHandle handle)
+	{
+		if (handle >= 0)
+			close((int)handle);
+	}
+
+	bool MapSharedMemory(SharedMemoryHandle handle, void* baseAddr, size_t size, PAGE_PERMISSION permissionFlags)
+	{
+		if (handle < 0)
+			return false;
+		void* r = mmap(baseAddr, size, GetProt(permissionFlags), MAP_SHARED | MAP_FIXED, (int)handle, 0);
+		return r == baseAddr;
+	}
+
+	void UnmapSharedMemory(void* baseAddr, size_t size)
+	{
+		// put an inaccessible anonymous reservation back in place (same state as after ReserveMemory)
+		mmap(baseAddr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	}
 };

@@ -60,4 +60,29 @@ namespace MemMapper
 			VirtualFree(baseAddr, size, MEM_RELEASE);
 	}
 
+
+	/* shared memory: not implemented on Windows yet (would use placeholders: VirtualAlloc2 + MapViewOfFile3) */
+
+	bool SupportsSharedMemory()
+	{
+		return false;
+	}
+
+	SharedMemoryHandle CreateSharedMemory(size_t size, const char* debugName)
+	{
+		return INVALID_SHARED_MEMORY;
+	}
+
+	void CloseSharedMemory(SharedMemoryHandle handle)
+	{
+	}
+
+	bool MapSharedMemory(SharedMemoryHandle handle, void* baseAddr, size_t size, PAGE_PERMISSION permissionFlags)
+	{
+		return false;
+	}
+
+	void UnmapSharedMemory(void* baseAddr, size_t size)
+	{
+	}
 };

@@ -621,6 +621,11 @@ namespace coreinit
 	void OSSchedulerBegin(sint32 numCPUEmulationThreads);
 	void OSSchedulerEnd();
 	bool OSIsSchedulerActive();
+	// freezing (Cemu): while frozen no guest thread is scheduled and the system events (alarms, audio output) that the
+	// main core handles while idle are paused. Running threads stop at the end of their time slice
+	void OSSetSchedulerFrozen(bool frozen);
+	bool OSIsSchedulerFrozen();
+	uint32 OSCountRunningThreads(); // threads currently executing on a core (0 once a freeze has taken effect)
 
 	// thread list access (Cemu)
 	std::span<OSThread_t*> OSLockActiveThreadList();

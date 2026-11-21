@@ -2,6 +2,8 @@ add_library(CemuCafe
   Account/Account.cpp
   Account/AccountError.h
   Account/Account.h
+  CafeProcess.cpp
+  CafeProcess.h
   CafeSystem.cpp
   CafeSystem.h
   Filesystem/fsc.cpp

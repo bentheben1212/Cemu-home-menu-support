@@ -108,6 +108,11 @@ struct MMURange
 	bool isMapped() const { return m_isMapped; };
 	bool isOptional() const { return (flags & MFLAG::FLAG_OPTIONAL) != 0; };
 	bool isMappedEarly() const { return (flags & MFLAG::FLAG_MAP_EARLY) != 0; };
+	// memory that belongs to one guest process (code, data, Cemu's HLE data) as opposed to memory shared by all
+	// processes (shared fonts, foreground bucket, IOSU, tiling aperture)
+	bool isPerProcess() const;
+	// backed by a shared memory object, so the memory of a suspended process can be swapped out by remapping
+	bool isSharedMemoryBacked() const { return m_sharedMemory >= 0; }
 
 	const uint32 baseAddress;
 	const uint32 initSize; // initial size
@@ -117,7 +122,17 @@ struct MMURange
 	// runtime parameters
 	uint32 size;
 	bool m_isMapped{};
+	sint64 m_sharedMemory{-1}; // MemMapper::SharedMemoryHandle, -1 if plain reserved memory
 };
+
+// Process memory swapping (suspending a title while another one runs). Per-process ranges are backed by shared memory
+// when the platform supports it and CEMU_PROCESS_MEMORY=shared is set (opt-in while this is being developed)
+bool memory_isProcessMemorySwappable();
+struct MMUProcessMemory; // the memory objects of one process, while it is swapped out
+// swaps the current process memory out: maps fresh zeroed memory in its place and returns the detached memory
+MMUProcessMemory* memory_detachProcessMemory();
+// maps previously detached process memory back in place, discarding the memory that is mapped now
+void memory_attachProcessMemory(MMUProcessMemory* processMemory);
 
 
 extern MMURange mmuRange_LOW0;

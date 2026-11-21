@@ -34,6 +34,7 @@
 // External functionality headers
 #include "input/InputManager.h"
 #include "Cafe/TitleList/TitleList.h"
+#include "Cafe/CafeProcess.h"
 #include "Cemu/DiscordPresence/DiscordPresence.h"
 #include "util/ScreenSaver/ScreenSaver.h"
 #include "util/helpers/SystemException.h"
@@ -152,6 +153,9 @@ enum
 	MAINFRAME_MENU_ID_DEBUG_DUMP_RPX,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_FST,
 	MAINFRAME_MENU_ID_DEBUG_DUMP_CURL_REQUESTS,
+	// debug -> process (suspend/resume groundwork)
+	MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE = 21650,
+	MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE_SWAP,
 	// help
 	MAINFRAME_MENU_ID_HELP_ABOUT = 21700,
 	MAINFRAME_MENU_ID_HELP_UPDATE,
@@ -225,6 +229,8 @@ EVT_MENU(MAINFRAME_MENU_ID_DEBUG_AUDIO_AUX_ONLY, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_VK_ACCURATE_BARRIERS, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_GPU_CAPTURE, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_RAM, MainWindow::OnDebugSetting)
+EVT_MENU(MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE, MainWindow::OnDebugSetting)
+EVT_MENU(MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE_SWAP, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_RPX, MainWindow::OnDebugSetting)
 EVT_MENU(MAINFRAME_MENU_ID_DEBUG_DUMP_FST, MainWindow::OnDebugSetting)
 // debug -> View ...
@@ -1041,6 +1047,10 @@ void MainWindow::OnDebugSetting(wxCommandEvent& event)
 		ActiveSettings::EnableAudioOnlyAux(event.IsChecked());
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_RAM)
 		memory_createDump();
+	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE)
+		CafeProcess::StartDebugFreezeTest(5, false);
+	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE_SWAP)
+		CafeProcess::StartDebugFreezeTest(5, true);
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_RPX)
 		CafeSystem::DumpCurrentRPX();
 	else if (event.GetId() == MAINFRAME_MENU_ID_DEBUG_DUMP_FST)
@@ -2385,6 +2395,8 @@ void MainWindow::RecreateMenu()
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_VIEW_AUDIO_DEBUGGER, _("&View audio debugger"));
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_VIEW_TEXTURE_RELATIONS, _("&View texture cache info"));
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_RAM, _("&Dump current RAM"))->Enable(m_game_launched);
+	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE, _("&Freeze title for 5 seconds"))->Enable(m_game_launched);
+	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_FREEZE_TITLE_SWAP, _("Freeze title for 5 seconds (&swap memory)"))->Enable(m_game_launched);
 	debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_RPX, _("&Dump current RPX"))->Enable(m_game_launched);
 	// debugMenu->Append(MAINFRAME_MENU_ID_DEBUG_DUMP_FST, _("&Dump WUD filesystem"))->Enable(false);
 

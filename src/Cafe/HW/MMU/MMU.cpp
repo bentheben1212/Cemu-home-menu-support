@@ -86,9 +86,53 @@ MMURange::MMURange(const uint32 baseAddress, const uint32 size, MMU_MEM_AREA_ID 
 	g_mmuRanges.emplace_back(this);
 }
 
+bool memory_isProcessMemorySwappable()
+{
+	static const bool s_enabled = []() {
+		const char* v = getenv("CEMU_PROCESS_MEMORY");
+		bool requested = v && strcmp(v, "shared") == 0;
+		bool supported = MemMapper::SupportsSharedMemory();
+		if (requested && !supported)
+			cemuLog_log(LogType::Force, "CEMU_PROCESS_MEMORY=shared: shared memory is not supported on this platform yet");
+		return requested && supported;
+	}();
+	return s_enabled;
+}
+
+bool MMURange::isPerProcess() const
+{
+	switch (areaId)
+	{
+	case MMU_MEM_AREA_ID::CODE_LOW0:
+	case MMU_MEM_AREA_ID::CODE_TRAMPOLINE:
+	case MMU_MEM_AREA_ID::CODE_CAVE:
+	case MMU_MEM_AREA_ID::CODE_MAIN:
+	case MMU_MEM_AREA_ID::MEM2_DATA:
+	case MMU_MEM_AREA_ID::OVERLAY:
+	case MMU_MEM_AREA_ID::MEM1:
+	case MMU_MEM_AREA_ID::RPLLOADER:
+	case MMU_MEM_AREA_ID::CEMU_PRIVATE:
+		return true;
+	default:
+		return false;
+	}
+}
+
 void MMURange::mapMem()
 {
 	cemu_assert_debug(!m_isMapped);
+	if (isPerProcess() && memory_isProcessMemorySwappable())
+	{
+		m_sharedMemory = MemMapper::CreateSharedMemory(size, name.c_str());
+		if (m_sharedMemory >= 0 && MemMapper::MapSharedMemory(m_sharedMemory, memory_base + baseAddress, size, MemMapper::PAGE_PERMISSION::P_RW))
+		{
+			m_isMapped = true;
+			return;
+		}
+		cemuLog_log(LogType::Force, "MMU: shared memory for {} failed, using plain memory", name);
+		MemMapper::CloseSharedMemory(m_sharedMemory);
+		m_sharedMemory = -1;
+	}
 	if (MemMapper::AllocateMemory(memory_base + baseAddress, size, MemMapper::PAGE_PERMISSION::P_RW, true) == nullptr)
 	{
 		std::string errorMsg = _tr("Unable to allocate {} memory", name);
@@ -104,8 +148,69 @@ void MMURange::mapMem()
 
 void MMURange::unmapMem()
 {
-    MemMapper::FreeMemory(memory_base + baseAddress, size, true);
+	if (m_sharedMemory >= 0)
+	{
+		MemMapper::UnmapSharedMemory(memory_base + baseAddress, size);
+		MemMapper::CloseSharedMemory(m_sharedMemory);
+		m_sharedMemory = -1;
+	}
+	else
+		MemMapper::FreeMemory(memory_base + baseAddress, size, true);
 	m_isMapped = false;
+}
+
+struct MMUProcessMemory
+{
+	struct Entry
+	{
+		MMURange* range;
+		uint32 size;
+		MemMapper::SharedMemoryHandle handle;
+	};
+	std::vector<Entry> entries;
+};
+
+MMUProcessMemory* memory_detachProcessMemory()
+{
+	auto* processMemory = new MMUProcessMemory();
+	for (auto& range : g_mmuRanges)
+	{
+		if (!range->isMapped() || !range->isSharedMemoryBacked())
+			continue;
+		MemMapper::SharedMemoryHandle fresh = MemMapper::CreateSharedMemory(range->size, range->name.c_str());
+		if (fresh < 0 || !MemMapper::MapSharedMemory(fresh, memory_base + range->baseAddress, range->size, MemMapper::PAGE_PERMISSION::P_RW))
+		{
+			// keep the current memory mapped, the swap is incomplete for this range
+			cemuLog_log(LogType::Force, "MMU: unable to swap out {}", range->name);
+			MemMapper::CloseSharedMemory(fresh);
+			continue;
+		}
+		processMemory->entries.push_back({ range, range->size, range->m_sharedMemory });
+		range->m_sharedMemory = fresh;
+	}
+	cemuLog_log(LogType::Force, "MMU: swapped out {} memory ranges", processMemory->entries.size());
+	return processMemory;
+}
+
+void memory_attachProcessMemory(MMUProcessMemory* processMemory)
+{
+	if (!processMemory)
+		return;
+	for (auto& entry : processMemory->entries)
+	{
+		MMURange* range = entry.range;
+		cemu_assert_debug(range->size == entry.size);
+		if (!MemMapper::MapSharedMemory(entry.handle, memory_base + range->baseAddress, entry.size, MemMapper::PAGE_PERMISSION::P_RW))
+		{
+			cemuLog_log(LogType::Force, "MMU: unable to swap {} back in", range->name);
+			MemMapper::CloseSharedMemory(entry.handle);
+			continue;
+		}
+		MemMapper::CloseSharedMemory(range->m_sharedMemory);
+		range->m_sharedMemory = entry.handle;
+	}
+	cemuLog_log(LogType::Force, "MMU: swapped in {} memory ranges", processMemory->entries.size());
+	delete processMemory;
 }
 
 MMURange mmuRange_LOW0					{ 0x00010000, 0x000F0000, MMU_MEM_AREA_ID::CODE_LOW0, "CODE_LOW0" }; // code cave (Cemuhook)
