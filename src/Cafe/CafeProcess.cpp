@@ -371,7 +371,30 @@ namespace CafeProcess
 			{
 				std::this_thread::sleep_for(std::chrono::seconds(seconds));
 				CafeSystem::RequestRecreateCanvas();
-				ResumeSuspendedTitle();
+				if (ResumeSuspendedTitle())
+				{
+					// diagnostics: is the resumed title running?
+					uint32 frame0 = LatteGPUState.frameCounter, flip0 = LatteGPUState.flipCounter, draw0 = LatteGPUState.drawCallCounter;
+					for (sint32 pass = 0; pass < 3; pass++)
+					{
+						std::this_thread::sleep_for(std::chrono::seconds(2));
+						cemuLog_log(LogType::Force, "Process: {} s after resume: GPU frames +{} flips +{} draws +{}, gx2InitCalled {}, scheduler active {} frozen {}", (pass + 1) * 2,
+							LatteGPUState.frameCounter - frame0, LatteGPUState.flipCounter - flip0, LatteGPUState.drawCallCounter - draw0, LatteGPUState.gx2InitCalled,
+							coreinit::OSIsSchedulerActive(), coreinit::OSIsSchedulerFrozen());
+						if (pass != 0)
+							continue;
+						static const char* stateNames[] = { "NONE", "READY", "RUNNING", "WAITING", "MORIBUND" };
+						auto threads = coreinit::OSLockActiveThreadList();
+						for (OSThread_t* thread : threads)
+						{
+							uint32 state = (uint32)thread->state.value();
+							cemuLog_log(LogType::Force, "Process:   thread {:08x} {} suspend {} prio {} IP {:08x} LR {:08x} \"{}\"", MEMPTR<OSThread_t>(thread).GetMPTR(),
+								state < 5 ? stateNames[state] : "?", (sint32)thread->suspendCounter, (sint32)thread->effectivePriority,
+								(uint32)thread->context.srr0, (uint32)thread->context.lr, thread->threadName ? thread->threadName.GetPtr() : "");
+						}
+						coreinit::OSUnlockActiveThreadList();
+					}
+				}
 			}
 			s_debugTestRunning = false;
 		}).detach();

@@ -1,4 +1,5 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/libs/TCL/TCL.h"
 #include "HW/Latte/Core/LattePM4.h"
 #include "OS/libs/coreinit/coreinit_Time.h"
@@ -204,4 +205,10 @@ namespace TCL
 	{
 		return &s_COStclModule;
 	}
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace TCL
+{
+	CAFE_PROCESS_STATE(s_currentRetireMarker);
 }
