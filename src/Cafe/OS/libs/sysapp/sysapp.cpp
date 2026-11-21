@@ -872,11 +872,50 @@ namespace sysapp
 	};
 	static_assert(sizeof(EManualArgs) == 0x10);
 
+	// Electronic Manual applet (PFID 3). Copy data (sys args) serialization isn't implemented, so the title whose manual
+	// was requested is kept here and handed to the manual through _SYSGetEManualArgs when it starts
+	static constexpr sint32 SYS_PFID_EMANUAL = 3;
+	static uint64 s_eManualRequestedTitleId = 0;
+
 	void _SYSSwitchToEManual(EManualArgs* args)
 	{
 		// the struct has the titleId at offset 8 and standard args at 0 (total size is most likely 0x10)
-		cemuLog_log(LogType::Force, "SYSSwitchToEManual called. Opening the manual is not supported");
-		coreinit::StartBackgroundForegroundTransition();
+		uint64 requestedTitleId = args ? (uint64)args->titleId : 0;
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		cemuLog_log(LogType::Force, "_SYSSwitchToEManual(args 0x{:08x}, title {:016x}) from {:016x} (LR 0x{:08x})", MEMPTR<void>(args).GetMPTR(), requestedTitleId, currentTitleId, PPCInterpreter_getCurrentInstance()->spr.LR);
+		if (requestedTitleId == 0)
+		{
+			// opened from an applet (e.g. the HOME Menu): show the manual of the main app
+			requestedTitleId = coreinit::__OSGetMainAppTitleId();
+			if (requestedTitleId == 0)
+				requestedTitleId = currentTitleId;
+		}
+		uint64 eManualTitleId = _SYSResolvePFIDToTitleId(SYS_PFID_EMANUAL);
+		if (eManualTitleId == 0 || !nn::acp::ACPIsTitleLaunchable(eManualTitleId))
+		{
+			cemuLog_log(LogType::Force, "_SYSSwitchToEManual: Electronic Manual (PFID 3) not installed, manual not opened");
+			coreinit::StartBackgroundForegroundTransition();
+			return;
+		}
+		s_eManualRequestedTitleId = requestedTitleId;
+		cemuLog_log(LogType::Force, "_SYSSwitchToEManual: opening the manual of {:016x} in {:016x}", requestedTitleId, eManualTitleId);
+		coreinit::__OSClearCopyData();
+		_SYSSwitchToTitle("_SYSSwitchToEManual", eManualTitleId);
+	}
+
+	// called by the Electronic Manual when it starts. Layout assumed to match EManualArgs (standard args, title id at +8)
+	uint32 _SYSGetEManualArgs(EManualArgs* argsOut)
+	{
+		uint64 titleId = s_eManualRequestedTitleId;
+		if (titleId == 0)
+			titleId = coreinit::__OSGetMainAppTitleId();
+		cemuLog_log(LogType::Force, "_SYSGetEManualArgs(0x{:08x}) -> title {:016x} (LR 0x{:08x})", MEMPTR<void>(argsOut).GetMPTR(), titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
+		if (argsOut)
+		{
+			memset(argsOut, 0, sizeof(EManualArgs));
+			argsOut->titleId = titleId;
+		}
+		return 0;
 	}
 
 	void SYSSwitchToEManual()
@@ -906,6 +945,7 @@ namespace sysapp
 		cafeExportRegister("sysapp", _SYSLaunchTitleWithStdArgsInNoSplash, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSGetEManualArgs, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEShop, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEShop, LogType::Placeholder);
 	}
