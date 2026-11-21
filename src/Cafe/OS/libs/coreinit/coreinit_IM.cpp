@@ -1,3 +1,4 @@
+#include "Cafe/CafeSystem.h"
 #include "Cafe/OS/common/OSCommon.h"
 
 // APD = Automatic Power Down
@@ -108,9 +109,12 @@ namespace coreinit
 		ppcDefineParamS32(uknR6, 3);
 		ppcDefineParamS32(uknR7, 4);
 
-		// todo
-		// note: No idea what these values mean. But they were chosen so that the Browser (surf.rpx) does not OSPanic()
-		memory_writeU32(paramOut + 0x0, 0);
+		// +0 IMHomeButtonType (0 none, 1 Wii Remote, 2 Wii Remote URC, 3 Wii Remote extension, 4 GamePad), +4 controller
+		// index (see decaf-emu). The Browser (surf.rpx) needs "none" when the HOME Menu wasn't opened, so report the
+		// GamePad only to the HOME Menu, which is started by a HOME button press
+		uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
+		bool isHomeMenu = (currentTitleId & 0xFFFFFFFFFFFFF0FFULL) == 0x000500301001000AULL;
+		memory_writeU32(paramOut + 0x0, isHomeMenu ? 4 : 0);
 		memory_writeU32(paramOut + 0x4, 0);
 
 		// for scope.rpx (Download Manager)

@@ -904,6 +904,20 @@ namespace sysapp
 		_SYSSwitchToTitle("_SYSSwitchToEManual", eManualTitleId);
 	}
 
+	// called by the HOME Menu at startup. The layout is unknown (probably where the HOME Menu learns whether there is
+	// suspended software). Not filled yet: logs the buffer the HOME Menu passes in so its defaults can be studied
+	uint32 _SYSGetHBMArgs(uint8be* args)
+	{
+		std::string dump;
+		if (args)
+		{
+			for (sint32 i = 0; i < 0x40; i++)
+				dump += fmt::format("{:02x}{}", (uint8)args[i], (i % 16) == 15 ? " | " : " ");
+		}
+		cemuLog_log(LogType::Force, "_SYSGetHBMArgs(0x{:08x}) (LR 0x{:08x}) buffer: {}", MEMPTR<void>(args).GetMPTR(), PPCInterpreter_getCurrentInstance()->spr.LR, dump);
+		return 0;
+	}
+
 	// called by the HOME Menu's Manual button. Arguments not documented (logged): opens the manual of the main app
 	uint32 _SYSSwitchToEManualFromHBM(uint32 arg0, uint32 arg1, uint32 arg2)
 	{
@@ -966,6 +980,7 @@ namespace sysapp
 		cafeExportRegister("sysapp", SYSSwitchToEManual, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSGetEManualArgs, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEManualFromHBM, LogType::Placeholder);
+		cafeExportRegister("sysapp", _SYSGetHBMArgs, LogType::Placeholder);
 		cafeExportRegister("sysapp", SYSSwitchToEShop, LogType::Placeholder);
 		cafeExportRegister("sysapp", _SYSSwitchToEShop, LogType::Placeholder);
 	}
