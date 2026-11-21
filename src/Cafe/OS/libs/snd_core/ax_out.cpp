@@ -396,9 +396,14 @@ namespace snd_core
 
 	void AXOut_init()
 	{
-
 		numQueuedFramesSndGeneric = 0;
+		AXOut_initDevices();
+	}
 
+	// creates the audio output devices if they don't exist (e.g. after another title's shutdown destroyed them while
+	// this title was suspended). Unlike AXOut_init it keeps the frame counters, so a resumed title keeps playing
+	void AXOut_initDevices()
+	{
 		std::unique_lock lock(g_audioMutex);
 		if (!g_tvAudio)
 		{

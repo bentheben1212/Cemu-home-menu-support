@@ -317,7 +317,7 @@ namespace CafeProcess
 		Latte_Start();
 		GraphicPack2::ActivateForCurrentTitle();
 		if (snd_core::AXIsInit())
-			snd_core::AXOut_init(); // audio devices are recreated if the other title's shutdown destroyed them
+			snd_core::AXOut_initDevices(); // audio devices are recreated if the other title's shutdown destroyed them
 		_RestoreEntries(suspended->threadState);
 		CafeSystem::StartSchedulerForResume();
 		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
