@@ -1,4 +1,5 @@
 #include <OS/RPL/rpl.h>
+#include <boost/algorithm/string.hpp>
 #include "config/ActiveSettings.h"
 #include "Cafe/OS/libs/coreinit/coreinit_SystemInfo.h"
 #include "Cafe/OS/common/OSCommon.h"
@@ -172,6 +173,34 @@ namespace coreinit
 		{
 			std::string fullPath = _Join(ctx, path);
 			FSCVirtualFile* file = fsc_open(fullPath.c_str(), accessFlags, fscStatus);
+			if (!file && boost::iequals(path, "Manual.bfma"))
+			{
+				// system data manuals use their product code as file name (e.g. WUP-N-HASE-USZ.bfma): use the only .bfma in the folder
+				std::string dirPath = *(std::string*)ctx;
+				sint32 dirStatus;
+				std::string bfmaName;
+				sint32 bfmaCount = 0;
+				if (FSCVirtualFile* dir = fsc_openDirIterator(dirPath.c_str(), &dirStatus))
+				{
+					FSCDirEntry entry;
+					while (fsc_nextDir(dir, &entry))
+					{
+						std::string_view name = entry.GetPath();
+						if (entry.isFile && name.size() > 5 && boost::iequals(name.substr(name.size() - 5), ".bfma"))
+						{
+							bfmaName = name;
+							bfmaCount++;
+						}
+					}
+					fsc_close(dir);
+				}
+				if (bfmaCount == 1)
+				{
+					cemuLog_log(LogType::Force, "FSBindMount: Manual.bfma missing, using {}", bfmaName);
+					fullPath = _Join(ctx, bfmaName);
+					file = fsc_open(fullPath.c_str(), accessFlags, fscStatus);
+				}
+			}
 			cemuLog_log(LogType::Force, "FSBindMount: open \"{}\" -> \"{}\" {}", path, fullPath, file ? "ok" : "NOT FOUND");
 			return file;
 		}

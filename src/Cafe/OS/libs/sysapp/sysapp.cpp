@@ -1,5 +1,6 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "sysapp.h"
+#include "Cafe/Filesystem/fsc.h"
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_FG.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
@@ -927,6 +928,20 @@ namespace sysapp
 		uint64 titleId = s_eManualRequestedTitleId;
 		if (titleId == 0)
 			titleId = coreinit::__OSGetMainAppTitleId();
+		if (_SYSGetUPIDFromTitleId(titleId) == 2)
+		{
+			// the Wii U Menu has no manual of its own: the Wii U console manual (WUP-N-HASE) is the system data title
+			// 0005001B-10059x00, x = region digit of the menu (0 JPN, 1 USA, 2 EUR)
+			uint64 systemManualTitleId = 0x0005001B10059000ULL | (titleId & 0xF00);
+			std::string metaDir = fmt::format("/vol/storage_mlc01/sys/title/{:08x}/{:08x}/meta", (uint32)(systemManualTitleId >> 32), (uint32)systemManualTitleId);
+			if (fsc_doesDirectoryExist(metaDir.c_str()))
+			{
+				cemuLog_log(LogType::Force, "_SYSGetEManualArgs: Wii U Menu manual -> system manual {:016x}", systemManualTitleId);
+				titleId = systemManualTitleId;
+			}
+			else
+				cemuLog_log(LogType::Force, "_SYSGetEManualArgs: system manual {:016x} not installed ({} missing)", systemManualTitleId, metaDir);
+		}
 		cemuLog_log(LogType::Force, "_SYSGetEManualArgs(0x{:08x}) -> title {:016x} (LR 0x{:08x})", MEMPTR<void>(argsOut).GetMPTR(), titleId, PPCInterpreter_getCurrentInstance()->spr.LR);
 		if (argsOut)
 		{

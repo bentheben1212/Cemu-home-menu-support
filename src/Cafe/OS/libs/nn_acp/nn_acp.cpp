@@ -314,7 +314,8 @@ namespace acp
 		ppcDefineParamU64(titleId, 0);
 		ppcDefineParamStr(path, 2);
 		ppcDefineParamU32(pathSize, 3);
-		const char* storage = (((titleId >> 32) & 0xFF) == 0x10 || ((titleId >> 32) & 0xFF) == 0x30) ? "sys" : "usr";
+		uint32 titleType = (uint32)(titleId >> 32) & 0xFF;
+		const char* storage = (titleType == 0x10 || titleType == 0x30 || titleType == 0x1B) ? "sys" : "usr"; // system apps, applets, system data
 		std::string metaDir = fmt::format("/vol/storage_mlc01/{}/title/{:08x}/{:08x}/meta", storage, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
 		cemuLog_log(LogType::Force, "ACPGetTitleMetaDir({:016x}) -> \"{}\"", titleId, metaDir);
 		if (path == nullptr || pathSize <= metaDir.size())
