@@ -119,6 +119,7 @@ namespace CafeProcess
 		MPTR sharedAreaAddr;
 		uint32 gx2InitCalled;
 		uint64 flipRequestCount;
+		bool isDRCPrimary;
 		bool tvBufferUsesSRGB;
 		bool drcBufferUsesSRGB;
 		float tvGamma;
@@ -178,6 +179,7 @@ namespace CafeProcess
 		snap.sharedAreaAddr = LatteGPUState.sharedAreaAddr;
 		snap.gx2InitCalled = LatteGPUState.gx2InitCalled;
 		snap.flipRequestCount = LatteGPUState.flipRequestCount.load();
+		snap.isDRCPrimary = LatteGPUState.isDRCPrimary;
 		snap.tvBufferUsesSRGB = LatteGPUState.tvBufferUsesSRGB;
 		snap.drcBufferUsesSRGB = LatteGPUState.drcBufferUsesSRGB;
 		snap.tvGamma = LatteGPUState.tvGamma;
@@ -216,6 +218,7 @@ namespace CafeProcess
 		LatteGPUState.sharedAreaAddr = snap.sharedAreaAddr;
 		LatteGPUState.gx2InitCalled = snap.gx2InitCalled;
 		LatteGPUState.flipRequestCount = snap.flipRequestCount;
+		LatteGPUState.isDRCPrimary = snap.isDRCPrimary;
 		LatteGPUState.tvBufferUsesSRGB = snap.tvBufferUsesSRGB;
 		LatteGPUState.drcBufferUsesSRGB = snap.drcBufferUsesSRGB;
 		LatteGPUState.tvGamma = snap.tvGamma;
@@ -275,8 +278,9 @@ namespace CafeProcess
 		coreinit::OSSchedulerEnd();
 		coreinit::OSSetSchedulerFrozen(false); // the scheduler is stopped; the next title runs normally
 		s_frozen = false;
-		Latte_Stop();
+		// snapshot the GPU state before stopping the GPU thread: its exit clears LatteGPUState completely
 		_SaveLatteState(suspended->latte);
+		Latte_Stop();
 		_SaveEntries(StatePhase::General, suspended->generalState);
 		suspended->cosStaticData = CafeStaticData::SaveCOSState();
 		PPCRecompiler_Shutdown(); // the recompiler tables are keyed by guest address, the next title has its own code there
