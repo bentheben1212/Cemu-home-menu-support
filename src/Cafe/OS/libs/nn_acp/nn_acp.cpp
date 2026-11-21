@@ -20,6 +20,8 @@
 #include "Cafe/IOSU/legacy/iosu_mcp.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 
+sint32 _SYSGetUPIDFromTitleId(uint64 titleId); // sysapp.cpp
+
 using ACPDeviceType = iosu::acp::ACPDeviceType;
 
 #define acpPrepareRequest() \
@@ -298,6 +300,20 @@ namespace acp
 		ppcDefineParamTypePtr(outUkn1, uint32be, 1);
 		ppcDefineParamTypePtr(outUkn2, uint32be, 2);
 		uint64 mainTitleId = _GetMainApplicationTitleId();
+		if (_SYSGetUPIDFromTitleId(mainTitleId) == 2)
+		{
+			// opened over the Wii U Menu: on a console the menu isn't suspended software, the HOME Menu shows
+			// "You have no suspended software". Report no main application (error code is a guess: ACP not found)
+			if (titleId)
+				*titleId = 0;
+			if (outUkn1)
+				*outUkn1 = 0;
+			if (outUkn2)
+				*outUkn2 = 0;
+			cemuLog_log(LogType::Force, "ACPGetTitleInfoOfMainApplication -> none (main app is the Wii U Menu)");
+			osLib_returnFromFunction(hCPU, (uint32)-500);
+			return;
+		}
 		if (titleId)
 			*titleId = mainTitleId;
 		if (outUkn1)
