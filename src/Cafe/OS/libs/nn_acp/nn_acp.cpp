@@ -317,6 +317,21 @@ namespace acp
 		uint32 titleType = (uint32)(titleId >> 32) & 0xFF;
 		const char* storage = (titleType == 0x10 || titleType == 0x30 || titleType == 0x1B) ? "sys" : "usr"; // system apps, applets, system data
 		std::string metaDir = fmt::format("/vol/storage_mlc01/{}/title/{:08x}/{:08x}/meta", storage, (uint32)(titleId >> 32), (uint32)(titleId & 0xFFFFFFFF));
+		if (titleType == 0x10 && ((titleId >> 12) & 0xFFFF) == 0x40 && !fsc_doesFileExist((metaDir + "/Manual.bfma").c_str()))
+		{
+			// the Wii U Menu has no manual of its own. The Wii U console manual (WUP-N-HASE-xxx.bfma) is in the system data
+			// title 0005001B-10059x00 (x = region digit of the menu). Its meta.xml has no title name, which the Electronic
+			// Manual requires, so it keeps getting the Wii U Menu's title id and only its manual folder is redirected here
+			uint64 systemManualTitleId = 0x0005001B10059000ULL | (titleId & 0xF00);
+			std::string systemManualDir = fmt::format("/vol/storage_mlc01/sys/title/{:08x}/{:08x}/meta", (uint32)(systemManualTitleId >> 32), (uint32)systemManualTitleId);
+			if (fsc_doesDirectoryExist(systemManualDir.c_str()))
+			{
+				cemuLog_log(LogType::Force, "ACPGetTitleMetaDir: Wii U Menu has no Manual.bfma, using the system manual {:016x}", systemManualTitleId);
+				metaDir = systemManualDir;
+			}
+			else
+				cemuLog_log(LogType::Force, "ACPGetTitleMetaDir: Wii U Menu has no Manual.bfma and the system manual {:016x} is not installed", systemManualTitleId);
+		}
 		cemuLog_log(LogType::Force, "ACPGetTitleMetaDir({:016x}) -> \"{}\"", titleId, metaDir);
 		if (path == nullptr || pathSize <= metaDir.size())
 		{
