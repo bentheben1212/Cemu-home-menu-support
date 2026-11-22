@@ -470,7 +470,11 @@ namespace CafeSystem
 	TitleId sForegroundTitleId = 0;
 	static TitleCompatibility s_foregroundTitleCompatibility = TitleCompatibility::Default;
 
-	GameInfo2 sGameInfo_ForegroundTitle;
+	std::unique_ptr<GameInfo2> sGameInfo_ForegroundTitle = std::make_unique<GameInfo2>();
+	// a suspended title keeps its GameInfo2 (and with it its open disc/NUS/archive volumes, which its open files still
+	// use) mounted at hidden paths only, see DetachSuspendedTitle
+	std::unique_ptr<GameInfo2> s_suspendedGameInfo;
+	std::vector<std::pair<TitleInfo*, std::string>> s_suspendedKeepAliveMounts;
 
 
 	static void _CheckForWine()
@@ -778,17 +782,18 @@ namespace CafeSystem
 		}
 	}
 
-	PREPARE_STATUS_CODE LoadAndMountForegroundTitle(TitleId titleId)
+	PREPARE_STATUS_CODE LoadAndMountForegroundTitle(TitleId titleId, bool useCurrentGameInfo = false)
 	{
         cemuLog_log(LogType::Force, "Mounting title {:016x}", (uint64)titleId);
-		sGameInfo_ForegroundTitle = CafeTitleList::GetGameInfo(titleId);
-		if (!sGameInfo_ForegroundTitle.IsValid())
+		if (!useCurrentGameInfo)
+			*sGameInfo_ForegroundTitle = CafeTitleList::GetGameInfo(titleId);
+		if (!sGameInfo_ForegroundTitle->IsValid())
 		{
 			cemuLog_log(LogType::Force, "Mounting failed: Game meta information is either missing, inaccessible or not valid (missing or invalid .xml files in code and meta folder)");
 			return PREPARE_STATUS_CODE::UNABLE_TO_MOUNT;
 		}
 		// check base
-		TitleInfo& titleBase = sGameInfo_ForegroundTitle.GetBase();
+		TitleInfo& titleBase = sGameInfo_ForegroundTitle->GetBase();
 		if (!titleBase.IsValid())
 			return PREPARE_STATUS_CODE::UNABLE_TO_MOUNT;
 		if(!titleBase.ParseXmlInfo())
@@ -801,7 +806,7 @@ namespace CafeSystem
 			return PREPARE_STATUS_CODE::UNABLE_TO_MOUNT;
 		}
 		// check update
-		TitleInfo& titleUpdate = sGameInfo_ForegroundTitle.GetUpdate();
+		TitleInfo& titleUpdate = sGameInfo_ForegroundTitle->GetUpdate();
 		if (titleUpdate.IsValid())
 		{
 			if (!titleUpdate.ParseXmlInfo())
@@ -817,7 +822,7 @@ namespace CafeSystem
 		else
 			cemuLog_log(LogType::Force, "Update: Not present");
 		// check AOC
-		auto aocList = sGameInfo_ForegroundTitle.GetAOC();
+		auto aocList = sGameInfo_ForegroundTitle->GetAOC();
 		if (!aocList.empty())
 		{
 			// todo - support for multi-title AOC
@@ -844,20 +849,20 @@ namespace CafeSystem
     {
         if(sLaunchModeIsStandalone)
             return;
-        cemu_assert_debug(sGameInfo_ForegroundTitle.IsValid()); // unmounting title which was never mounted?
-        if (!sGameInfo_ForegroundTitle.IsValid())
+        cemu_assert_debug(sGameInfo_ForegroundTitle->IsValid()); // unmounting title which was never mounted?
+        if (!sGameInfo_ForegroundTitle->IsValid())
             return;
-        sGameInfo_ForegroundTitle.GetBase().Unmount("/vol/content");
-        sGameInfo_ForegroundTitle.GetBase().Unmount(GetInternalVirtualCodeFolder());
-        if (sGameInfo_ForegroundTitle.HasUpdate())
+        sGameInfo_ForegroundTitle->GetBase().Unmount("/vol/content");
+        sGameInfo_ForegroundTitle->GetBase().Unmount(GetInternalVirtualCodeFolder());
+        if (sGameInfo_ForegroundTitle->HasUpdate())
         {
-            if(auto& update = sGameInfo_ForegroundTitle.GetUpdate(); update.IsValid())
+            if(auto& update = sGameInfo_ForegroundTitle->GetUpdate(); update.IsValid())
             {
                 update.Unmount("/vol/content");
                 update.Unmount(GetInternalVirtualCodeFolder());
             }
         }
-        auto aocList = sGameInfo_ForegroundTitle.GetAOC();
+        auto aocList = sGameInfo_ForegroundTitle->GetAOC();
         if (!aocList.empty())
         {
             TitleInfo& titleAOC = aocList[0];
@@ -1025,21 +1030,21 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return 0;
-		return sGameInfo_ForegroundTitle.GetVersion();
+		return sGameInfo_ForegroundTitle->GetVersion();
 	}
 
 	uint32 GetForegroundTitleSDKVersion()
 	{
 		if (sLaunchModeIsStandalone)
 			return 999999;
-		return sGameInfo_ForegroundTitle.GetSDKVersion();
+		return sGameInfo_ForegroundTitle->GetSDKVersion();
 	}
 
 	CafeConsoleRegion GetForegroundTitleRegion()
 	{
 		if (sLaunchModeIsStandalone)
 			return CafeConsoleRegion::USA;
-		return sGameInfo_ForegroundTitle.GetRegion();
+		return sGameInfo_ForegroundTitle->GetRegion();
 	}
 
 	std::string GetForegroundTitleName()
@@ -1047,9 +1052,9 @@ namespace CafeSystem
 		if (sLaunchModeIsStandalone)
 			return "Unknown Game";
 		std::string applicationName;
-		applicationName = sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetShortName(GetConfig().console_language);
+		applicationName = sGameInfo_ForegroundTitle->GetBase().GetMetaInfo()->GetShortName(GetConfig().console_language);
 		if (applicationName.empty()) //Try to get the English Title
-			applicationName = sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetShortName(CafeConsoleLanguage::EN);
+			applicationName = sGameInfo_ForegroundTitle->GetBase().GetMetaInfo()->GetShortName(CafeConsoleLanguage::EN);
 		if (applicationName.empty()) //Unknown Game
 			applicationName = "Unknown Game";
 		return applicationName;
@@ -1059,7 +1064,7 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return -1;
-		return sGameInfo_ForegroundTitle.GetBase().GetMetaInfo()->GetOlvAccesskey();
+		return sGameInfo_ForegroundTitle->GetBase().GetMetaInfo()->GetOlvAccesskey();
 	}
 
 	std::string GetForegroundTitleArgStr()
@@ -1069,18 +1074,18 @@ namespace CafeSystem
 			return *optional_arguments;
 		if (sLaunchModeIsStandalone)
 			return "";
-		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		auto& update = sGameInfo_ForegroundTitle->GetUpdate();
 		if (update.IsValid())
 			return update.GetArgStr();
-		return sGameInfo_ForegroundTitle.GetBase().GetArgStr();
+		return sGameInfo_ForegroundTitle->GetBase().GetArgStr();
 	}
 
 	uint32 GetForegroundTitleCodegenSize()
 	{
-		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		auto& update = sGameInfo_ForegroundTitle->GetUpdate();
 		if (update.IsValid() && update.GetCosInfo())
 			return update.GetCosInfo()->codegenSize;
-		auto& base = sGameInfo_ForegroundTitle.GetBase();
+		auto& base = sGameInfo_ForegroundTitle->GetBase();
 		if (base.IsValid() && base.GetCosInfo())
 			return base.GetCosInfo()->codegenSize;
 		return 0;
@@ -1101,14 +1106,14 @@ namespace CafeSystem
 			}
 		}
 
-		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
+		auto& update = sGameInfo_ForegroundTitle->GetUpdate();
 		if (update.IsValid())
 		{
 			ParsedCosXml* cosXml = update.GetCosInfo();
 			if (cosXml)
 				return cosXml->GetCapabilityBits(group) | resultMask;
 		}
-		auto& base = sGameInfo_ForegroundTitle.GetBase();
+		auto& base = sGameInfo_ForegroundTitle->GetBase();
 		if(base.IsValid())
 		{
 			ParsedCosXml* cosXml = base.GetCosInfo();
@@ -1212,13 +1217,42 @@ namespace CafeSystem
 		_ShutdownTitle(true);
 	}
 
+	void DiscardSuspendedTitleMounts()
+	{
+		for (auto& [titleInfo, path] : s_suspendedKeepAliveMounts)
+			titleInfo->Unmount(path);
+		s_suspendedKeepAliveMounts.clear();
+		s_suspendedGameInfo.reset();
+	}
+
 	void DetachSuspendedTitle()
 	{
 		std::unique_lock _lock(sShutdownTitleMtx);
 		// IOSU services are started per title; the next title starts them again (resume restarts them for this one)
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->TitleStop();
+		// the title's open files keep using its volumes (disc image, NUS content, archive), which are closed when their
+		// last mount point goes. Keep each part mounted at a hidden path and set the GameInfo2 aside
+		s_suspendedKeepAliveMounts.clear();
+		if (!sLaunchModeIsStandalone && sGameInfo_ForegroundTitle->IsValid())
+		{
+			auto keepMounted = [](TitleInfo& titleInfo) {
+				if (!titleInfo.IsValid())
+					return;
+				std::string path = TitleInfo::GetUniqueTempMountingPath();
+				if (titleInfo.Mount(path, "", FSC_PRIORITY_BASE))
+					s_suspendedKeepAliveMounts.emplace_back(&titleInfo, path);
+			};
+			keepMounted(sGameInfo_ForegroundTitle->GetBase());
+			if (sGameInfo_ForegroundTitle->HasUpdate())
+				keepMounted(sGameInfo_ForegroundTitle->GetUpdate());
+			auto aocList = sGameInfo_ForegroundTitle->GetAOC();
+			if (!aocList.empty())
+				keepMounted(aocList[0]);
+		}
 		UnmountCurrentTitle();
+		s_suspendedGameInfo = std::move(sGameInfo_ForegroundTitle);
+		sGameInfo_ForegroundTitle = std::make_unique<GameInfo2>();
 		UnmountExtras();
 		MlcStorageUnmountAllTitles();
 		UnmountBaseDirectories();
@@ -1230,7 +1264,14 @@ namespace CafeSystem
 	PREPARE_STATUS_CODE ReattachSuspendedTitle(TitleId titleId)
 	{
 		MountBaseDirectories();
-		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
+		// mount the title's GameInfo2 again, its volumes are still open (see DetachSuspendedTitle)
+		bool reuseGameInfo = s_suspendedGameInfo != nullptr;
+		if (reuseGameInfo)
+			sGameInfo_ForegroundTitle = std::move(s_suspendedGameInfo);
+		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId, reuseGameInfo);
+		for (auto& [titleInfo, path] : s_suspendedKeepAliveMounts)
+			titleInfo->Unmount(path);
+		s_suspendedKeepAliveMounts.clear();
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
 		gameProfile_load();
@@ -1264,11 +1305,11 @@ namespace CafeSystem
 		// only the current title gets mounted immediately, every other title should be mounted lazily on first access
 
 		// always mount the currently running title
-		if (sGameInfo_ForegroundTitle.GetBase().IsValid())
-			MlcStorageMountTitle(sGameInfo_ForegroundTitle.GetBase());
-		if (sGameInfo_ForegroundTitle.GetUpdate().IsValid())
-			MlcStorageMountTitle(sGameInfo_ForegroundTitle.GetUpdate());
-		for(auto& it : sGameInfo_ForegroundTitle.GetAOC())
+		if (sGameInfo_ForegroundTitle->GetBase().IsValid())
+			MlcStorageMountTitle(sGameInfo_ForegroundTitle->GetBase());
+		if (sGameInfo_ForegroundTitle->GetUpdate().IsValid())
+			MlcStorageMountTitle(sGameInfo_ForegroundTitle->GetUpdate());
+		for(auto& it : sGameInfo_ForegroundTitle->GetAOC())
 			MlcStorageMountTitle(it);
 
 		// setup system for lazy-mounting of other known titles

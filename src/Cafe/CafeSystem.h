@@ -66,6 +66,7 @@ namespace CafeSystem
 	void ShutdownTitle();
 	// shutdown for a switch to another title: a suspended title stays (and keeps the GPU thread, see CafeProcess)
 	void ShutdownTitleForSwitch();
+	void DiscardSuspendedTitleMounts(); // closes the volumes a suspended title kept open
 
 	// suspending a title (see CafeProcess): the title's state was set aside, unmount it and mark the system as stopped
 	// without the usual teardown. Reattach mounts it again (no executable is loaded, the title continues where it was)

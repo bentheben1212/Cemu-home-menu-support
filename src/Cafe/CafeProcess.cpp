@@ -433,6 +433,7 @@ namespace CafeProcess
 		for (auto& [entry, value] : s_suspended->generalState)
 			entry->Discard(value);
 		CafeStaticData::DiscardCOSState(s_suspended->cosStaticData);
+		CafeSystem::DiscardSuspendedTitleMounts();
 		memory_discardProcessMemory(s_suspended->memory);
 		s_suspended.reset();
 	}
