@@ -997,10 +997,13 @@ namespace coreinit
 			return; // the HOME Menu handles HOME itself (closes)
 		if (s_homeMenuLaunchPending)
 			return;
-		if (_IsWiiUMenuTitle(currentTitleId))
+		// a game (any main app other than the Wii U Menu) gets the HOME Menu only if it can be suspended underneath it;
+		// otherwise HOME closes it (below). A game that disabled HOME is told the press was denied
+		bool openOverGame = !_IsWiiUMenuTitle(currentTitleId) && !_IsAppletTitle(currentTitleId) && CafeProcess::IsSuspendEnabled() && g_homeButtonMenuEnabled;
+		if (_IsWiiUMenuTitle(currentTitleId) || openOverGame)
 		{
-			// open the HOME Menu over the Wii U Menu. Capture the current frame first, the HOME Menu shows it behind itself
-			cemuLog_log(LogType::Force, "HOME button: opening the HOME Menu over the Wii U Menu");
+			// open the HOME Menu over the Wii U Menu or a game. Capture the current frame first, the HOME Menu shows it behind itself
+			cemuLog_log(LogType::Force, "HOME button: opening the HOME Menu over {:016x} ({})", currentTitleId, openOverGame ? "game" : "Wii U Menu");
 			GX2::GX2_RequestLastFrameCapture();
 			s_homeMenuLaunchWaitReads = 0;
 			s_homeMenuLaunchPending = true;
@@ -1061,7 +1064,7 @@ namespace coreinit
 				}
 				if (CafeProcess::IsSuspendEnabled())
 				{
-					// keep the Wii U Menu alive, frozen, while the HOME Menu runs (resumed when the HOME Menu returns to it)
+					// keep the Wii U Menu or game alive, frozen, while the HOME Menu runs (resumed when the HOME Menu returns to it)
 					uint64 homeMenuTitleId = sysapp::ResolvePFIDToTitleId(SYS_PFID_HOME_MENU);
 					if (homeMenuTitleId == 0)
 					{

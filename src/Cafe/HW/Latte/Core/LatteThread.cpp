@@ -329,6 +329,15 @@ void Latte_SwitchCacheOwner(uint32 newOwnerId, bool deleteCurrent)
 	LatteMRT::SetDepthAndStencilAttachment(nullptr, false);
 	if (deleteCurrent)
 		LatteTC_DeleteTexturesOfOwner(oldOwnerId);
+	else
+	{
+		uint32 numKept = 0;
+		for (LatteTexture* texture : LatteTexture::GetAllTextures())
+			numKept += (texture && texture->ownerId == oldOwnerId) ? 1 : 0;
+		uint32 heapSize, allocationSize, allocNum;
+		LatteBufferCache_getStats(heapSize, allocationSize, allocNum);
+		cemuLog_log(LogType::Force, "GPU: keeping {} textures of owner {} (buffer heap {} of {} MB in use)", numKept, oldOwnerId, allocationSize / (1024 * 1024), heapSize / (1024 * 1024));
+	}
 	LatteBufferCache_SwitchOwner(newOwnerId, deleteCurrent);
 	LatteTC_SetActiveOwner(newOwnerId);
 	LatteTC_PrepareTexturesForResume(newOwnerId);
