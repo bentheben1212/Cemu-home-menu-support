@@ -103,7 +103,7 @@ render target bindings (`Latte_SwitchCacheOwner`). This work runs on the GPU thr
   textures and buffers, keep the GPU thread.
 - Resume: make the suspended title's caches active again and restore its registers. CPU writes recorded by texture
   write tracking while the other title ran are dropped (they went to the other title's memory).
-- Fallback: `CEMU_PROCESS_SUSPEND_GPU=restart` stops and restarts the GPU thread (with a texture readback on exit).
+- Fallback: `CEMU_PROCESS_SUSPEND_GPU=restart` stops and restarts the GPU thread; GPU-only images are lost then.
 Shader and pipeline caches (compiled code keyed by shader hash) are shared and stay.
 
 ### Input and the rest
