@@ -1,3 +1,4 @@
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
@@ -793,6 +794,15 @@ namespace padscore
 		void RPLMapped() override
 		{
 			s_padscoreStaticData.Allocate();
+			// a new title starts without the previous title's callbacks and buffers (they point into its memory)
+			g_kpad_ringbuffer = nullptr;
+			g_kpad_ringbuffer_length = 0;
+			g_wpad_callback_by_kpad = false;
+			g_wpad_state = kWPADStateMaster;
+			g_padscore.kpad_initialized = false;
+			for (auto& data : g_padscore.controller_data)
+				data = {};
+			g_padscore.max_controllers = kWPADMaxControllers;
 			cafeExportRegister("padscore", WPADIsMplsAttached, LogType::InputAPI);
 			cafeExportRegister("padscore", WPADGetAccGravityUnit, LogType::InputAPI);
 
@@ -839,4 +849,16 @@ namespace padscore
 		return &s_COSCoreinitModule;
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace padscore
+{
+	CAFE_PROCESS_STATE(g_kpad_ringbuffer);
+	CAFE_PROCESS_STATE(g_kpad_ringbuffer_length);
+	CAFE_PROCESS_STATE(g_wpad_callback_by_kpad);
+	CAFE_PROCESS_STATE(g_wpad_state);
+	CAFE_PROCESS_STATE(g_padscore.kpad_initialized);
+	CAFE_PROCESS_STATE(g_padscore.controller_data);
+	CAFE_PROCESS_STATE(g_padscore.max_controllers);
 }

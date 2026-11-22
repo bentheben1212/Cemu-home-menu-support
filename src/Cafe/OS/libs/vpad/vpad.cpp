@@ -1,3 +1,4 @@
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Misc.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
@@ -1203,6 +1204,8 @@ namespace vpad
 			s_vpadStaticData.Allocate();
 			for (sint32 i = 0; i < VPAD_MAX_CONTROLLERS; i++)
 				SetChannelDefaults(i);
+			for (auto& data : g_vpad.controller_data)
+				data.sampling_callback = nullptr; // the previous title's callback points into its memory
 			cafeExportRegister("vpad", VPADSetBtnRepeat, LogType::InputAPI);
 			cafeExportRegister("vpad", VPADSetSamplingCallback, LogType::InputAPI);
 			cafeExportRegister("vpad", VPADRead, LogType::InputAPI);
@@ -1256,4 +1259,10 @@ namespace vpad
 		return &s_COSVPADModule;
 	}
 
+}
+
+// per-process state, saved/restored when the title is suspended (see Cafe/CafeProcessState.h)
+namespace vpad
+{
+	CAFE_PROCESS_STATE(g_vpad.controller_data);
 }
