@@ -1,3 +1,4 @@
+#include "Cafe/CafeProcessState.h"
 #include "Cafe/OS/common/OSCommon.h"
 #include "Cafe/Filesystem/fsc.h"
 #include "nn_acp.h"
@@ -98,6 +99,7 @@ namespace acp
 	}
 
     bool sSaveDirMounted{false};
+	std::string sSaveDirMountedHostPath; // host folder mounted at /vol/save/ for the running title, empty if none
 
 	ACPStatus ACPMountSaveDir()
 	{
@@ -109,6 +111,7 @@ namespace acp
 		// mount save path
 		const auto mlc = ActiveSettings::GetMlcPath("usr/save/{:08x}/{:08x}/user/", high, low);
 		FSCDeviceHostFS_Mount("/vol/save/", _pathToUtf8(mlc), FSC_PRIORITY_BASE);
+		sSaveDirMountedHostPath = _pathToUtf8(mlc);
 		nnResult mountResult = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_ACP, 0);
 		return _ACPConvertResultToACPStatus(&mountResult);
 	}
@@ -117,6 +120,7 @@ namespace acp
     {
         cemu_assert_debug(!sSaveDirMounted);
         fsc_unmount("/vol/save/", FSC_PRIORITY_BASE);
+        sSaveDirMountedHostPath.clear();
         return ACPStatus::SUCCESS;
     }
 
@@ -482,4 +486,28 @@ namespace acp
 		return &s_COSnnAcpModule;
 	}
 }
+}
+
+// per-process state (see Cafe/CafeProcessState.h): /vol/save/ is one global mount point. A suspended title's save
+// folder is unmounted while another title runs (which mounts its own) and mounted again on resume
+namespace nn::acp
+{
+	static CafeProcess::StateCallbacks s_saveDirMountState("/vol/save/ mount", CafeProcess::StatePhase::General,
+		[]() -> void* {
+			auto* saved = new std::string(std::move(sSaveDirMountedHostPath));
+			sSaveDirMountedHostPath.clear();
+			if (!saved->empty())
+				fsc_unmount("/vol/save/", FSC_PRIORITY_BASE);
+			return saved;
+		},
+		[](void* p) {
+			auto* saved = (std::string*)p;
+			if (!saved->empty())
+			{
+				FSCDeviceHostFS_Mount("/vol/save/", *saved, FSC_PRIORITY_BASE);
+				sSaveDirMountedHostPath = std::move(*saved);
+			}
+			delete saved;
+		},
+		[](void* p) { delete (std::string*)p; });
 }
