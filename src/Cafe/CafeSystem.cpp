@@ -1361,6 +1361,13 @@ namespace CafeSystem
 
 	void RequestRecreateCanvas()
 	{
+		// the canvas is recreated for a new renderer. A GPU thread kept across a title switch (a suspended title, see
+		// CafeProcess) keeps its renderer and swapchains; destroying the canvas under it would wait on it forever
+		if (Latte_IsRunning())
+		{
+			cemuLog_log(LogType::Force, "Process: GPU thread kept, canvas not recreated");
+			return;
+		}
 		s_implementation->CafeRecreateCanvas();
 	}
 
